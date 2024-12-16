@@ -24,6 +24,8 @@ jobs:
           - "1.82" # MSRV
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/cache@v4
         with:
           path: |
