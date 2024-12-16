@@ -13,13 +13,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("cargo::metadata=CJSON_LIB_PATH={cjson_lib_path}");
         println!("cargo::rustc-link-search=native={}", cjson_lib_path);
         println!("cargo::rustc-link-lib={kind}=cJSON");
-    } else {
+    } else if vendored.is_ok() {
         println!("cargo::metadata=CJSON_LIB_PATH={cjson_src_path}");
         cc::Build::new()
             .file(format!("{}/cJSON.c", cjson_src_path))
             .file(format!("{}/cJSON_Utils.c", cjson_src_path))
             .files(glob::glob(&format!("{cjson_src_path}/cJSON*.c"))?.flatten())
-            .static_flag(vendored.is_ok())
+            .static_flag(true)
             .include(&cjson_include_path)
             .try_compile("cJSON")?;
     }
