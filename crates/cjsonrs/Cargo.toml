@@ -1,0 +1,28 @@
+[package]
+name = "cjsonrs"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+categories = ["api-bindings", "embedded", "no-std", "parser-implementations"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = ["vendored", "send", "sync", "std"]
+send = []
+sync = ["send"]
+vendored = ["cjsonrs-sys/vendored"]
+std = ["cjsonrs-sys/std", "thiserror/std"]
+
+[dependencies]
+cjsonrs-sys.workspace = true
+thiserror.workspace = true
+
+[[example]]
+name = "custom_allocator"
+required-features = ["default"]

@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2021"
+authors = ["Altair Bueno <abueno@airzonecontrol.com>", "The cJSON Authors"]
+license = "TBD"
+repository = "TBD"
+keywords = ["cjson", "json", "ffi", "serde"]
+rust-version = "1.82.0"
+
+[workspace.dependencies]
+# Workspace dependencies
+cjsonrs = { path = "crates/cjsonrs" }
+cjsonrs-sys = { path = "crates/cjsonrs-sys" }
+# Utilities
+thiserror = { version = "2.0", default-features = false }
+
+# Build dependencies
+bindgen = "0.70.0"
+cc = "1.0.83"
+glob = "0.3.1"

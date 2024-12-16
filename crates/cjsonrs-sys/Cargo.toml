@@ -1,0 +1,26 @@
+[package]
+name = "cjsonrs-sys"
+version = "0.1.0"
+links = "cJSON"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+categories = ["external-ffi-bindings", "embedded", "no-std", "parser-implementations"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lib]
+doctest = false
+
+[features]
+vendored = []
+std = []
+
+[build-dependencies]
+bindgen.workspace = true
+cc.workspace = true
+glob.workspace = true
