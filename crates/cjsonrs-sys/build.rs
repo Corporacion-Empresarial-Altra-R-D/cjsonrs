@@ -6,6 +6,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let std = std::env::var("CARGO_FEATURE_STD");
     let kind = if vendored.is_ok() { "static" } else { "dylib" };
 
+    println!("cargo::rerun-if-env-changed=CJSON_SRC_PATH");
+    println!("cargo::rerun-if-env-changed=CJSON_INCLUDE_PATH");
+    println!("cargo::rerun-if-env-changed=CJSON_LIB_PATH");
     println!("cargo::metadata=KIND={kind}");
     println!("cargo::metadata=CJSON_INCLUDE_PATH={cjson_include_path}");
 
