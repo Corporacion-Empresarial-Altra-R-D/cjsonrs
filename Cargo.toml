@@ -4,9 +4,10 @@ members = ["crates/*"]
 
 [workspace.package]
 edition = "2021"
-authors = ["Altair Bueno <abueno@airzonecontrol.com>", "The cJSON Authors"]
-license = "TBD"
-repository = "TBD"
+authors = ["Altair Bueno <abueno@airzonecontrol.com>"]
+license = "MIT"
+repository = "https://github.com/Corporacion-Empresarial-Altra-R-D/cjsonrs"
+homepage = "https://github.com/Corporacion-Empresarial-Altra-R-D/cjsonrs"
 keywords = ["cjson", "json", "ffi", "serde"]
 rust-version = "1.82.0"
 

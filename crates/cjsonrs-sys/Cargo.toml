@@ -1,14 +1,16 @@
 [package]
 name = "cjsonrs-sys"
 version = "0.1.0"
+description = "Raw bindings to the cJSON library. For a more user-friendly interface, see the `cjsonrs` crate."
 links = "cJSON"
+categories = ["external-ffi-bindings", "embedded", "no-std", "parser-implementations"]
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 keywords.workspace = true
 rust-version.workspace = true
-categories = ["external-ffi-bindings", "embedded", "no-std", "parser-implementations"]
 
 [package.metadata.docs.rs]
 all-features = true

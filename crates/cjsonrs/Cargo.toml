@@ -1,13 +1,16 @@
 [package]
 name = "cjsonrs"
 version = "0.1.0"
+description = "High level, `no_std` bindings for cJSON, an ultralightweight JSON parser in ANSI C"
+categories = ["api-bindings", "embedded", "no-std", "parser-implementations"]
+
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 keywords.workspace = true
 rust-version.workspace = true
-categories = ["api-bindings", "embedded", "no-std", "parser-implementations"]
 
 [package.metadata.docs.rs]
 all-features = true
