@@ -20,8 +20,8 @@ jobs:
         toolchain:
           - stable
           - beta
-          - nightly
           - "1.82" # MSRV
+          # - nightly # Nightly is not particularly useful for this project
     steps:
       - uses: actions/checkout@v4
         with:
