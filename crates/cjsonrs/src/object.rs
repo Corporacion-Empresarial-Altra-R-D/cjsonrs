@@ -225,11 +225,7 @@ where
         let result = self.remove(key);
 
         let return_code = unsafe {
-            cjsonrs_sys::cJSON_AddItemToObjectCS(
-                ptr,
-                key.as_ptr(),
-                value.into_raw_parts().as_ptr(),
-            )
+            cjsonrs_sys::cJSON_AddItemToObjectCS(ptr, key.as_ptr(), value.into_raw_parts().as_ptr())
         };
 
         // We met all preconditions, so this should never fail.

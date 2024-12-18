@@ -1,5 +1,6 @@
 #![doc = "../README.md"]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![forbid(clippy::std_instead_of_core)]
 
 mod array;
 mod cjson;
