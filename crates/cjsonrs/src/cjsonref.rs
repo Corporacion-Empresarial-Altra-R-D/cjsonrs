@@ -426,6 +426,9 @@ where
     }
 }
 
-// TODO: Declare safety properties.
+// SAFETY: See [crate level docs](::crate) for more information.
+#[cfg(feature = "send")]
 unsafe impl Send for CJsonIter<'_, '_> {}
+// SAFETY: See [crate level docs](::crate) for more information.
+#[cfg(feature = "sync")]
 unsafe impl Sync for CJsonIter<'_, '_> {}
