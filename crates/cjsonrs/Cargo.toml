@@ -20,12 +20,22 @@ default = ["vendored", "send", "sync", "std"]
 send = []
 sync = ["send"]
 vendored = ["cjsonrs-sys/vendored"]
-std = ["cjsonrs-sys/std", "thiserror/std"]
+serde = ["dep:serde"]
+std = ["cjsonrs-sys/std", "thiserror/std", "serde?/std"]
 
 [dependencies]
 cjsonrs-sys.workspace = true
 thiserror.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde = { workspace = true, features = ["derive"] }
+
 
 [[example]]
 name = "custom_allocator"
 required-features = ["default"]
+
+[[example]]
+name = "serde"
+required-features = ["default", "serde", "serde/derive"]

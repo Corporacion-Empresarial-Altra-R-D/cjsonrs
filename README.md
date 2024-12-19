@@ -59,6 +59,8 @@ Set the following features to enable the corresponding functionality:
   information.
 - `std` - Enables the use of `std` types. Disabling this feature will make the
   crate `no_std` compatible. Note that `alloc` is still required.
+- `serde` - Implements serialize and deserialize traits for all CJson types. It
+  also enables the `serde` module. See the serde example for more information.
 
 ## FAQs
 
@@ -85,7 +87,7 @@ Additionally, `cjsonrs` provides additional features not present in `cjson-rs`:
 - No assumptions: `Send`/`Sync` are feature-gated, allocations are not assumed
   to be made with Rust's allocator, indexing is not assumed to be `usize`, etc.
 - More idiomatic Rust API, with many traits implemented
-- Serde support (WIP)
+- Serde support
 
 ### Anything missing?
 

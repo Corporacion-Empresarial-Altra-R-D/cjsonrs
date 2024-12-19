@@ -1,77 +1,45 @@
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+use alloc::ffi::CString;
+
+#[cfg(feature = "std")]
 use std::ffi::CString;
-use std::ops::Deref;
 
-use serde::de::Visitor;
-use serde::ser::SerializeMap;
-use serde::ser::SerializeSeq;
-use serde::Deserialize;
-use serde::Serialize;
+use super::Error;
+use crate::CJson;
+use crate::CJsonArray;
+use crate::CJsonObject;
+use crate::CJsonRef;
+use core::fmt::Display;
+use serde::de::*;
 
-use super::CJson;
-use super::CJsonArray;
-use super::CJsonObject;
-use super::CJsonRef;
+/// Deserialize a value from a CJson value.
+#[inline(always)]
+pub fn from_cjson<'de, T: DeserializeOwned>(cjson: &'_ CJsonRef<'_>) -> Result<T, Error> {
+    todo!("from_cjson")
+    // T::deserialize(Deserializer(cjson))
+}
 
-// Serialization
-impl Serialize for CJson {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+impl serde::de::Error for Error {
+    fn custom<T>(msg: T) -> Self
     where
-        S: serde::Serializer,
+        T: Display,
     {
-        self.deref().serialize(serializer)
+        Error::Custom(msg.to_string())
     }
 }
 
-impl<R: AsRef<CJsonRef>> Serialize for CJsonObject<R> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut map = serializer.serialize_map(Some(self.len() as usize))?;
-        for (k, v) in self.iter() {
-            let k = k.to_str().map_err(serde::ser::Error::custom)?;
-            map.serialize_entry(k, v)?;
-        }
-        map.end()
-    }
-}
+pub struct Deserializer<'de>(pub &'de CJsonRef<'de>);
 
-impl<R: AsRef<CJsonRef>> Serialize for CJsonArray<R> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut seq = serializer.serialize_seq(Some(self.len() as usize))?;
-        for v in self.iter() {
-            seq.serialize_element(v)?;
-        }
-        seq.end()
-    }
-}
-
-impl Serialize for CJsonRef {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        if let Some(b) = self.as_bool() {
-            serializer.serialize_bool(b)
-        } else if let Some(n) = self.as_number() {
-            serializer.serialize_f64(n)
-        } else if let Some(s) = self.as_c_string() {
-            let s = s.to_str().map_err(serde::ser::Error::custom)?;
-            serializer.serialize_str(s)
-        } else if let Some(a) = self.as_array() {
-            a.serialize(serializer)
-        } else if let Some(o) = self.as_object() {
-            o.serialize(serializer)
-        } else {
-            serializer.serialize_unit()
-        }
-    }
-}
-
+/*
 // Deserialization
+
+
+
+
+
 impl<'de> Deserialize<'de> for CJson {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -213,45 +181,5 @@ impl<'de> Deserialize<'de> for CJson {
     }
 }
 
-pub struct Serializer;
 
-impl serde::Serializer for Serializer {
-    type Error = Error;
-    type Ok = CJson;
-
-    fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
-        CJson::bool(v)
-    }
-
-    fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
-        self.serialize_f64(v.into())
-    }
-
-    fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
-        CJson::number(v)
-    }
-
-    fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
-        self.serialize_f64(v.into())
-    }
-
-    fn serialize_u16(self, v: u16) -> Result<Self::Ok, Self::Error> {
-        self.serialize_f64(v.into())
-    }
-
-    fn serialize_u32(self, v: u32) -> Result<Self::Ok, Self::Error> {
-        self.serialize_f64(v.into())
-    }
-    
-    fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
-        self.serialize_f64(v.into())
-    }
-
-    fn serialize_i16(self, v: i16) -> Result<Self::Ok, Self::Error> {
-        self.serialize_f64(v.into())
-    }
-
-    fn serialize_i32(self, v: i32) -> Result<Self::Ok, Self::Error> {
-        self.serialize_f64(v.into())
-    }
-}
+ */

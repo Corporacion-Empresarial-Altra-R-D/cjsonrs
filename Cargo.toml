@@ -12,11 +12,12 @@ keywords = ["cjson", "json", "ffi", "serde"]
 rust-version = "1.82.0"
 
 [workspace.dependencies]
-# Workspace dependencies
-cjsonrs = { path = "crates/cjsonrs" }
-cjsonrs-sys = { path = "crates/cjsonrs-sys" }
-# Utilities
+# Workspace members
+cjsonrs = { path = "crates/cjsonrs", version = "0.1.0" }
+cjsonrs-sys = { path = "crates/cjsonrs-sys", version = "0.1.0" }
+# Dependencies
 thiserror = { version = "2.0", default-features = false }
+serde = { version = "1", default-features = false }
 
 # Build dependencies
 bindgen = "0.70.0"
