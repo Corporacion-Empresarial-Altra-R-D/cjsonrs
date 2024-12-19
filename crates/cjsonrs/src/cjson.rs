@@ -247,7 +247,7 @@ impl Drop for CJson<'_> {
     }
 }
 
-impl<'json> FromStr for CJson<'json> {
+impl FromStr for CJson<'_> {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -281,7 +281,7 @@ impl<'json> Deref for CJson<'json> {
     }
 }
 
-impl<'json> DerefMut for CJson<'json> {
+impl DerefMut for CJson<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { CJsonRef::from_mut_ptr(self.cjson.as_mut()) }
     }
