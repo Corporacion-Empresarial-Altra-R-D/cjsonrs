@@ -2,7 +2,7 @@
 extern crate alloc;
 
 #[cfg(not(feature = "std"))]
-use alloc::ffi::NulError;
+use alloc::{ffi::NulError, string::String};
 
 #[cfg(feature = "std")]
 use std::ffi::NulError;

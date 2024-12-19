@@ -1,3 +1,5 @@
+#![cfg(feature = "serde")]
+
 use cjsonrs::cjson;
 use cjsonrs::serde::to_cjson;
 use core::error::Error;

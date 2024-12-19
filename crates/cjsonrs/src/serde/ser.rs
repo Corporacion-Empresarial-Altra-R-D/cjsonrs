@@ -2,7 +2,7 @@
 extern crate alloc;
 
 #[cfg(not(feature = "std"))]
-use alloc::ffi::CString;
+use alloc::{borrow::ToOwned, ffi::CString, format, string::ToString};
 
 #[cfg(feature = "std")]
 use std::ffi::CString;
