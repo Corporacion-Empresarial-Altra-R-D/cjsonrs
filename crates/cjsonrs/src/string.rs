@@ -8,12 +8,31 @@ use core::hash::Hash;
 use core::ops::Deref;
 use core::ptr::NonNull;
 
+/// An owned, null-terminated, C-style string.
+///
+/// This type is used to represent strings that are owned by the caller, but were allocated by the
+/// cJSON library. Thus, the drop implementation of the [`CString`](std::ffi::CString) type is
+/// unsuitable, as it would attempt to free the using the global allocator. Instead, this type
+/// provides a custom drop implementation that calls the `cJSON_free` function to free the string.
+///
+///
+/// For more information, refer to [`CString::from_raw`](std::ffi::CString::from_raw).
 pub struct CJsonString {
     ptr: NonNull<c_char>,
     len: usize,
 }
 
 impl CJsonString {
+    /// Constructs a new `CJsonString` from a raw pointer and length.
+    ///
+    /// # Safety
+    ///
+    /// The following invariants must be upheld when calling this function:
+    ///
+    /// - `ptr` must be a valid pointer to a null-terminated C-style string.
+    /// - `ptr` must be allocated by the cJSON library. (i.e. it must be freed using [`cjsonrs_sys::cJSON_free`].)
+    /// - `len` must be the length of the string, including the null terminator.
+    ///
     pub unsafe fn from_raw_parts(ptr: NonNull<c_char>, len: usize) -> Self {
         Self { ptr, len }
     }
@@ -88,3 +107,10 @@ impl Hash for CJsonString {
         s.hash(state)
     }
 }
+
+// SAFETY: See [crate level docs](::crate) for more information.
+#[cfg(feature = "send")]
+unsafe impl Send for CJsonString {}
+// SAFETY: See [crate level docs](::crate) for more information.
+#[cfg(feature = "sync")]
+unsafe impl Sync for CJsonString {}
