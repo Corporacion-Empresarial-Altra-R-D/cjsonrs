@@ -59,6 +59,8 @@ Set the following features to enable the corresponding functionality:
   information.
 - `std` - Enables the use of `std` types. Disabling this feature will make the
   crate `no_std` compatible. Note that `alloc` is still required.
+- `alloc` - Enables the use of the `alloc` crate. This option is ignored if the
+  `std` feature is enabled.
 - `serde` - Implements serialize and deserialize traits for all CJson types. It
   also enables the `serde` module. See the serde example for more information.
 
