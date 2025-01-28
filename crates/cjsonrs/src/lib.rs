@@ -7,10 +7,11 @@ mod cjson;
 mod cjsonref;
 mod error;
 mod object;
+mod string;
 #[macro_use]
 mod macros;
-#[cfg(feature = "serde")]
-pub mod serde;
+// #[cfg(feature = "serde")]
+// pub mod serde;
 
 // Re-export module contents
 pub use array::*;
@@ -18,3 +19,4 @@ pub use cjson::*;
 pub use cjsonref::*;
 pub use error::*;
 pub use object::*;
+pub use string::*;

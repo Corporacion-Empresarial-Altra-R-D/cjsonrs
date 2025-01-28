@@ -1,11 +1,11 @@
-#[cfg(not(feature = "std"))]
-extern crate alloc;
-
-#[cfg(not(feature = "std"))]
-use alloc::ffi::CString;
-
-#[cfg(feature = "std")]
-use std::ffi::CString;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "std")] {
+        use std::ffi::CString;
+    } else if #[cfg(feature = "alloc")] {
+        extern crate alloc;
+        use alloc::ffi::CString;
+    }
+}
 
 use core::ffi::CStr;
 use core::fmt::Debug;
@@ -332,11 +332,15 @@ macro_rules! index_mut_object {
         }
     };
 }
-
+#[cfg(any(feature = "alloc", feature = "std"))]
 index_object!(CString, CJson<'json>, get);
+#[cfg(any(feature = "alloc", feature = "std"))]
 index_object!(CString, &CJsonRef<'json>, get);
+#[cfg(any(feature = "alloc", feature = "std"))]
 index_object!(CString, &mut CJsonRef<'json>, get);
+#[cfg(any(feature = "alloc", feature = "std"))]
 index_mut_object!(CString, CJson<'json>, get_mut);
+#[cfg(any(feature = "alloc", feature = "std"))]
 index_mut_object!(CString, &mut CJsonRef<'json>, get_mut);
 
 index_object!(&CStr, CJson<'json>, get);

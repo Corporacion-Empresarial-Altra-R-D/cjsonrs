@@ -1,13 +1,11 @@
-#[cfg(not(feature = "std"))]
-extern crate alloc;
-
-#[cfg(not(feature = "std"))]
-use alloc::borrow::ToOwned;
-#[cfg(not(feature = "std"))]
-use alloc::ffi::CString;
-
-#[cfg(feature = "std")]
-use std::ffi::CString;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "std")] {
+        use std::ffi::CString;
+    } else if #[cfg(feature = "alloc")] {
+        extern crate alloc;
+        use alloc::ffi::CString;
+    }
+}
 
 use core::borrow::Borrow;
 use core::ffi::CStr;
@@ -300,7 +298,7 @@ impl Display for CJson<'_> {
 
 impl Clone for CJson<'_> {
     fn clone(&self) -> Self {
-        self.deref().to_owned()
+        self.deref().duplicate().expect("Failed to clone CJson")
     }
 }
 
@@ -324,6 +322,7 @@ macro_rules! generate_try_from_impl {
 
 generate_try_from_impl!(bool, bool);
 generate_try_from_impl!(&'json CStr, string_reference);
+#[cfg(any(feature = "std", feature = "alloc"))]
 generate_try_from_impl!(CString, string);
 generate_try_from_impl!(i8, number);
 generate_try_from_impl!(i16, number);

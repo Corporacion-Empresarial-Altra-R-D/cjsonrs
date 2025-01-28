@@ -1,14 +1,9 @@
-#[cfg(not(feature = "std"))]
-extern crate alloc;
-
-#[cfg(not(feature = "std"))]
-use alloc::ffi::CString;
-
-#[cfg(not(feature = "std"))]
-use alloc::borrow::ToOwned;
-
-#[cfg(feature = "std")]
-use std::ffi::CString;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "alloc")] {
+        extern crate alloc;
+        use alloc::borrow::ToOwned;
+    }
+}
 
 use core::ffi::CStr;
 use core::fmt::Debug;
@@ -19,6 +14,7 @@ use core::ptr::NonNull;
 use super::CJson;
 use super::CJsonArray;
 use super::CJsonObject;
+use super::CJsonString;
 use super::Error;
 
 /// A safe and borrowed wrapper around [`cjsonrs_sys::cJSON`].
@@ -208,42 +204,34 @@ impl<'json> CJsonRef<'json> {
     /// Serializes the underlying [`cjsonrs_sys::cJSON`] object into a JSON
     /// string.
     #[inline(always)]
-    pub fn to_c_string(&self) -> Result<CString, Error> {
+    pub fn to_c_string(&self) -> Result<CJsonString, Error> {
         let ptr = self.as_ptr();
 
         let s = unsafe { cjsonrs_sys::cJSON_PrintUnformatted(ptr) };
 
-        if s.is_null() {
-            Err(Error::Allocation)
+        if let Some(ptr) = NonNull::new(s) {
+            let s = unsafe { CStr::from_ptr(ptr.as_ptr()) };
+            let len = s.to_bytes_with_nul().len();
+            unsafe { Ok(CJsonString::from_raw_parts(ptr, len)) }
         } else {
-            unsafe {
-                // The memory could potentially be allocated by foreign code. String duplication is required.
-                let tmp = CStr::from_ptr(s);
-                let tmp = tmp.to_owned();
-                cjsonrs_sys::cJSON_free(s as _);
-                Ok(tmp)
-            }
+            Err(Error::Allocation)
         }
     }
 
     /// Serializes the underlying [`cjsonrs_sys::cJSON`] object into a pretty
     /// JSON string.
     #[inline(always)]
-    pub fn to_c_string_pretty(&self) -> Result<CString, Error> {
+    pub fn to_c_string_pretty(&self) -> Result<CJsonString, Error> {
         let ptr = self.as_ptr();
 
         let s = unsafe { cjsonrs_sys::cJSON_Print(ptr) };
 
-        if s.is_null() {
-            Err(Error::Allocation)
+        if let Some(ptr) = NonNull::new(s) {
+            let s = unsafe { CStr::from_ptr(ptr.as_ptr()) };
+            let len = s.to_bytes_with_nul().len();
+            unsafe { Ok(CJsonString::from_raw_parts(ptr, len)) }
         } else {
-            unsafe {
-                // The memory could potentially be allocated by foreign code. String duplication is required.
-                let tmp = CStr::from_ptr(s);
-                let tmp = tmp.to_owned();
-                cjsonrs_sys::cJSON_free(s as _);
-                Ok(tmp)
-            }
+            Err(Error::Allocation)
         }
     }
 
@@ -290,6 +278,20 @@ impl<'json> CJsonRef<'json> {
             None
         } else {
             Some(unsafe { CStr::from_ptr(ptr) })
+        }
+    }
+
+    /// Duplicates the underlying [`cjsonrs_sys::cJSON`] object.
+    #[inline(always)]
+    pub fn duplicate(&self) -> Result<CJson<'json>, Error> {
+        let ptr = self.as_ptr();
+        unsafe {
+            let ptr = cjsonrs_sys::cJSON_Duplicate(ptr, 1);
+            if let Some(ptr) = NonNull::new(ptr) {
+                Ok(CJson::from_raw_parts(ptr, PhantomData::<&'json ()>))
+            } else {
+                Err(Error::Allocation)
+            }
         }
     }
 }
@@ -345,19 +347,12 @@ impl Display for CJsonRef<'_> {
     }
 }
 
+#[cfg(any(feature = "std", feature = "alloc"))]
 impl<'json> ToOwned for CJsonRef<'json> {
     type Owned = CJson<'json>;
 
     fn to_owned(&self) -> Self::Owned {
-        let ptr = self.as_ptr();
-        unsafe {
-            let ptr = cjsonrs_sys::cJSON_Duplicate(ptr, 1);
-            if let Some(ptr) = NonNull::new(ptr) {
-                CJson::from_raw_parts(ptr, PhantomData::<&'json ()>)
-            } else {
-                panic!("cJSON_Duplicate returned a null pointer");
-            }
-        }
+        self.duplicate().expect("Failed to duplicate CJson")
     }
 }
 
