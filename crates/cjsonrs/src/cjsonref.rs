@@ -322,7 +322,7 @@ impl Debug for CJsonRef<'_> {
         } else if let Some(o) = self.as_object() {
             write!(f, "{o:?}")
         } else {
-            unreachable!("No other data types are possible if the underling cJSON is valid")
+            write!(f, "Unknown({:x})", self.0.type_)
         }
     }
 }
