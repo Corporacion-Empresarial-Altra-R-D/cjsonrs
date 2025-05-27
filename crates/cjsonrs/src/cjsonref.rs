@@ -64,6 +64,19 @@ impl<'json> CJsonRef<'json> {
         &mut *(ptr as *mut Self)
     }
 
+    /// Obtains the raw flags used to represent metadata about the
+    /// underlying [`cjsonrs_sys::cJSON`] object.
+    ///
+    /// The flags are stored in the `type` field of the
+    /// [`cjsonrs_sys::cJSON`] object, which is a bitmask that
+    /// contains information about the type of the object, whether it is a
+    /// reference, and other metadata.
+    pub fn flags(&self) -> i32 {
+        // SAFETY: Self is repr(transparent) over cjsonrs_sys::cJSON, so we can safely
+        // transmute a reference to Self to a reference to cjsonrs_sys::cJSON.
+        unsafe { core::mem::transmute::<&Self, &cjsonrs_sys::cJSON>(self) }.type_
+    }
+
     /// Returns `true` if the underlying [`cjsonrs_sys::cJSON`] object is a
     /// null.
     #[inline(always)]
