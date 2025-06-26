@@ -149,3 +149,80 @@ fn assert_that_booleans_can_be_serialized_into_cjson() -> Result<(), Box<dyn Err
     assert_eq!(to_cjson(&true)?, expected);
     Ok(())
 }
+
+#[test]
+fn assert_that_cjson_null_can_be_serialized_into_serde_json_value() -> Result<(), Box<dyn Error>> {
+    let obtained = serde_json::to_value(&cjson!(null)?)?;
+    let expected = serde_json::json!(null);
+
+    assert_eq!(obtained, expected);
+    Ok(())
+}
+
+#[test]
+fn assert_that_cjson_string_can_be_serialized_into_serde_json_value() -> Result<(), Box<dyn Error>>
+{
+    let obtained = serde_json::to_value(&cjson!(c"Hello world!")?)?;
+    let expected = serde_json::json!("Hello world!");
+
+    assert_eq!(obtained, expected);
+    Ok(())
+}
+
+#[test]
+fn assert_that_cjson_number_can_be_serialized_into_serde_json_value() -> Result<(), Box<dyn Error>>
+{
+    let obtained = serde_json::to_value(&cjson!(42.0)?)?;
+    let expected = serde_json::json!(42.0);
+
+    assert_eq!(obtained, expected);
+    Ok(())
+}
+
+#[test]
+fn assert_that_cjson_bool_can_be_serialized_into_serde_json_value() -> Result<(), Box<dyn Error>> {
+    let obtained = serde_json::to_value(&cjson!(true)?)?;
+    let expected = serde_json::json!(true);
+
+    assert_eq!(obtained, expected);
+    Ok(())
+}
+
+#[test]
+fn assert_that_cjson_array_can_be_serialized_into_serde_json_value() -> Result<(), Box<dyn Error>> {
+    let obtained = serde_json::to_value(&cjson!([c"hello", null])?)?;
+    let expected = serde_json::json!(["hello", null]);
+
+    assert_eq!(obtained, expected);
+    Ok(())
+}
+
+#[test]
+fn assert_that_cjson_object_can_be_serialized_into_serde_json_value() -> Result<(), Box<dyn Error>>
+{
+    let obtained = serde_json::to_value(&cjson!({c"hello" => c"world"})?)?;
+    let expected = serde_json::json!({"hello": "world"});
+
+    assert_eq!(obtained, expected);
+    Ok(())
+}
+
+#[test]
+fn assert_that_complex_cjson_can_be_serialized_into_serde_json_value() -> Result<(), Box<dyn Error>>
+{
+    let obtained = serde_json::to_value(&cjson!({
+        c"hello" => c"world",
+        c"answer" => 42.0,
+        c"array" => [c"hello", null],
+        c"object" => {c"hello" => c"world"},
+    })?)?;
+    let expected = serde_json::json!({
+        "hello": "world",
+        "answer": 42.0,
+        "array": ["hello", null],
+        "object": {"hello": "world"},
+    });
+
+    assert_eq!(obtained, expected);
+    Ok(())
+}

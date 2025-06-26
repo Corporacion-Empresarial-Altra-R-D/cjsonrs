@@ -1,11 +1,16 @@
-#[cfg(not(feature = "std"))]
-extern crate alloc;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "std")] {
+        use std::ffi::NulError;
 
-#[cfg(not(feature = "std"))]
-use alloc::{ffi::NulError, string::String};
+    } else if #[cfg(feature = "alloc")] {
+        extern crate alloc;
 
-#[cfg(feature = "std")]
-use std::ffi::NulError;
+        use alloc::ffi::NulError;
+        use alloc::string::String;
+    }
+}
+
+use core::str::Utf8Error;
 
 /// Error type for serde operations
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -18,6 +23,8 @@ pub enum Error {
     CJson(#[from] crate::Error),
     #[error("Failed to construct CString from UTF-8 string: {0}")]
     CString(#[from] NulError),
+    #[error("Failed to convert CString to UTF-8 string: {0}")]
+    Utf8String(#[from] Utf8Error),
     #[error("{0}")]
     Custom(String),
 }

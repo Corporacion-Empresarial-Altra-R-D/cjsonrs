@@ -10,8 +10,8 @@ mod object;
 mod string;
 #[macro_use]
 mod macros;
-// #[cfg(feature = "serde")]
-// pub mod serde;
+#[cfg(feature = "serde")]
+pub mod serde;
 
 // Re-export module contents
 pub use array::*;

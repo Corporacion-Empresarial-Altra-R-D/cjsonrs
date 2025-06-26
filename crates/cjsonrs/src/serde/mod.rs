@@ -1,8 +1,9 @@
 //! Serde support for cjson.
 //!
-//! This module provides a [`Serializer`] and [`Deserializer`] implementation
+//! This module provides an implementation of the Serde serialization framework
 //! for [CJson](crate::CJson) values. This allows you to construct CJson values
-//! from Rust data structures and vice versa.
+//! from Rust data structures and vice versa, as well as to serialize them to
+//! and from other formats.
 //!
 //! # Example
 //!
@@ -39,6 +40,6 @@ mod de;
 mod error;
 mod ser;
 
-pub use de::{from_cjson, Deserializer};
+pub use de::from_cjson;
 pub use error::{Error, Result};
 pub use ser::{to_cjson, Serializer};

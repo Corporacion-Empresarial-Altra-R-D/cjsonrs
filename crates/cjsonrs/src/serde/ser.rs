@@ -1,11 +1,15 @@
-#[cfg(not(feature = "std"))]
-extern crate alloc;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "std")] {
+        use std::ffi::CString;
+    } else if #[cfg(feature = "alloc")] {
+        extern crate alloc;
 
-#[cfg(not(feature = "std"))]
-use alloc::{borrow::ToOwned, ffi::CString, format, string::ToString};
-
-#[cfg(feature = "std")]
-use std::ffi::CString;
+        use alloc::borrow::ToOwned;
+        use alloc::borrow::ffi::CString;
+        use alloc::borrow::format;
+        use alloc::borrow::string::ToString;
+    }
+}
 
 use super::Error;
 use crate::CJson;
@@ -77,12 +81,14 @@ impl Serialize for CJsonRef<'_> {
         } else if let Some(s) = self.as_c_string() {
             let s = s.to_str().map_err(serde::ser::Error::custom)?;
             serializer.serialize_str(s)
+        } else if self.is_null() {
+            serializer.serialize_unit()
         } else if let Some(a) = self.as_array() {
             a.serialize(serializer)
         } else if let Some(o) = self.as_object() {
             o.serialize(serializer)
         } else {
-            unreachable!("Malformed cJSON")
+            Err(serde::ser::Error::custom("Invalid CJson value"))
         }
     }
 }

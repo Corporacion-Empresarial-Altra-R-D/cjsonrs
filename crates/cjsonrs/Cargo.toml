@@ -22,7 +22,7 @@ sync = ["send"]
 vendored = ["cjsonrs-sys/vendored"]
 serde = ["dep:serde"]
 std = ["cjsonrs-sys/std", "thiserror/std", "serde?/std"]
-alloc = []
+alloc = ["serde?/alloc"]
 
 [dependencies]
 cjsonrs-sys.workspace = true
@@ -31,7 +31,8 @@ serde = { workspace = true, optional = true }
 cfg-if.workspace = true
 
 [dev-dependencies]
-serde = { workspace = true, features = ["derive", "alloc"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
 
 
 [[example]]
