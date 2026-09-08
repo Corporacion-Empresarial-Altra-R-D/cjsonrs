@@ -1,12 +1,5 @@
-cfg_if::cfg_if! {
-    if #[cfg(feature = "std")] {
-        use std::ffi::CString;
-    } else if #[cfg(feature = "alloc")] {
-        extern crate alloc;
-        use alloc::ffi::CString;
-    }
-}
-
+#[cfg(any(feature = "std", feature = "alloc"))]
+use alloc::ffi::CString;
 use core::ffi::CStr;
 use core::fmt::Debug;
 use core::fmt::Display;
@@ -263,6 +256,24 @@ impl<'json> TryFrom<CJson<'json>> for CJsonObject<CJson<'json>> {
         } else {
             Err(Error::TypeError)
         }
+    }
+}
+
+impl<'json, R> AsRef<CJsonRef<'json>> for CJsonObject<R>
+where
+    R: AsRef<CJsonRef<'json>>,
+{
+    fn as_ref(&self) -> &CJsonRef<'json> {
+        self.inner.as_ref()
+    }
+}
+
+impl<'json, R> AsMut<CJsonRef<'json>> for CJsonObject<R>
+where
+    R: AsMut<CJsonRef<'json>>,
+{
+    fn as_mut(&mut self) -> &mut CJsonRef<'json> {
+        self.inner.as_mut()
     }
 }
 

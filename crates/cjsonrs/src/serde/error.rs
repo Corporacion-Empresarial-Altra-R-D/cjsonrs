@@ -1,15 +1,5 @@
-cfg_if::cfg_if! {
-    if #[cfg(feature = "std")] {
-        use std::ffi::NulError;
-
-    } else if #[cfg(feature = "alloc")] {
-        extern crate alloc;
-
-        use alloc::ffi::NulError;
-        use alloc::string::String;
-    }
-}
-
+use alloc::ffi::NulError;
+use alloc::string::String;
 use core::str::Utf8Error;
 
 /// Error type for serde operations
@@ -19,6 +9,8 @@ pub enum Error {
     KeyMustBeAString,
     #[error("Float value is not finite")]
     FloatNotFinite,
+    #[error("cJSON value has an unknown or unsupported type")]
+    UnknownValue,
     #[error("Failed to construct cJSON object: {0}")]
     CJson(#[from] crate::Error),
     #[error("Failed to construct CString from UTF-8 string: {0}")]

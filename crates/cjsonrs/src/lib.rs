@@ -2,6 +2,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(clippy::std_instead_of_core)]
 
+#[cfg(any(feature = "std", feature = "alloc"))]
+extern crate alloc;
+
 mod array;
 mod cjson;
 mod cjsonref;

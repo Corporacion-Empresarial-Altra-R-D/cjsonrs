@@ -20,7 +20,9 @@ default = ["vendored", "send", "sync", "std"]
 send = []
 sync = ["send"]
 vendored = ["cjsonrs-sys/vendored"]
-serde = ["dep:serde"]
+# The serde integration builds cJSON values from owned Rust strings, so it
+# needs an allocator.
+serde = ["dep:serde", "alloc"]
 std = ["cjsonrs-sys/std", "thiserror/std", "serde?/std"]
 alloc = ["serde?/alloc"]
 
@@ -28,7 +30,6 @@ alloc = ["serde?/alloc"]
 cjsonrs-sys.workspace = true
 thiserror.workspace = true
 serde = { workspace = true, optional = true }
-cfg-if.workspace = true
 
 [dev-dependencies]
 serde = { workspace = true, features = ["derive", "std"] }

@@ -1,12 +1,5 @@
-cfg_if::cfg_if! {
-    if #[cfg(feature = "std")] {
-        use std::ffi::CString;
-    } else if #[cfg(feature = "alloc")] {
-        extern crate alloc;
-        use alloc::ffi::CString;
-    }
-}
-
+#[cfg(any(feature = "std", feature = "alloc"))]
+use alloc::ffi::CString;
 use core::borrow::Borrow;
 use core::ffi::CStr;
 use core::fmt::Debug;

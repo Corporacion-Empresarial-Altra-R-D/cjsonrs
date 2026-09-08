@@ -177,11 +177,29 @@ impl<'json> TryFrom<CJson<'json>> for CJsonArray<CJson<'json>> {
     type Error = Error;
 
     fn try_from(value: CJson<'json>) -> Result<Self, Self::Error> {
-        if value.is_object() {
+        if value.is_array() {
             Ok(unsafe { CJsonArray::from_raw_parts(value) })
         } else {
             Err(Error::TypeError)
         }
+    }
+}
+
+impl<'json, R> AsRef<CJsonRef<'json>> for CJsonArray<R>
+where
+    R: AsRef<CJsonRef<'json>>,
+{
+    fn as_ref(&self) -> &CJsonRef<'json> {
+        self.inner.as_ref()
+    }
+}
+
+impl<'json, R> AsMut<CJsonRef<'json>> for CJsonArray<R>
+where
+    R: AsMut<CJsonRef<'json>>,
+{
+    fn as_mut(&mut self) -> &mut CJsonRef<'json> {
+        self.inner.as_mut()
     }
 }
 

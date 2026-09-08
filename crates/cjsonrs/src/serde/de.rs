@@ -1,199 +1,225 @@
-cfg_if::cfg_if! {
-    if #[cfg(feature = "std")] {
-        use std::ffi::CString;
+//! Deserialization of Rust data structures from [`CJson`] values.
+//!
+//! The workhorse of this module is the [`Deserializer`] implementation for
+//! `&'de CJsonRef<'de>`. Because a [`CJsonRef`] is only ever observed behind a
+//! reference, the borrow *is* the deserializer, and string data can be handed
+//! to the visitor as `&'de str` without copying.
+//!
+//! # Number handling
+//!
+//! cJSON stores every number as a C `double`. That has two consequences:
+//!
+//! - Integers beyond 2<sup>53</sup> cannot be represented exactly, so such a
+//!   value is rounded as it is stored and does not survive a round trip.
+//!   Reading it back either fails, because rounding pushed it out of the
+//!   target type's range, or returns the rounded value.
+//! - There is no way to tell the JSON number `1` from `1.0`. When the target
+//!   type is self-describing (i.e. [`Deserializer::deserialize_any`], as used
+//!   by `#[serde(flatten)]`, `#[serde(untagged)]` and
+//!   [`CJson`] itself), a number that holds an exact integral value is reported
+//!   to the visitor as an integer.
 
-    } else if #[cfg(feature = "alloc")] {
-        extern crate alloc;
-
-        use alloc::ffi::CString;
-        use alloc::borrow::ToOwned;
-        use alloc::string::ToString;
-    }
-}
-
+use super::number::as_i128;
+use super::number::as_i64;
+use super::number::as_u128;
+use super::number::as_u64;
+use super::number::is_exact_integer;
 use super::Error;
 use crate::CJson;
 use crate::CJsonArray;
+use crate::CJsonIter;
 use crate::CJsonObject;
 use crate::CJsonRef;
-use core::fmt::Display;
+use alloc::ffi::CString;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 use core::fmt::Formatter;
 use serde::de;
+use serde::de::value::BorrowedStrDeserializer;
+use serde::de::DeserializeOwned;
+use serde::de::DeserializeSeed;
+use serde::de::EnumAccess;
 use serde::de::Error as _;
-use serde::de::*;
+use serde::de::Expected;
+use serde::de::IntoDeserializer;
+use serde::de::MapAccess;
+use serde::de::SeqAccess;
+use serde::de::Unexpected;
+use serde::de::VariantAccess;
+use serde::de::Visitor;
 use serde::forward_to_deserialize_any;
+use serde::Deserialize;
+use serde::Deserializer;
 
-/// Deserialize a value from a CJson value.
+/// Deserializes a value of type `T` from any CJson-like value.
+///
+/// # Example
+///
+/// ```
+/// # fn main() -> cjsonrs::serde::Result<()> {
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize, Debug, PartialEq)]
+/// struct Object {
+///     hello: String,
+///     answer: i32,
+/// }
+///
+/// let cjson = cjsonrs::cjson!({
+///     c"hello" => c"world",
+///     c"answer" => 42,
+/// })?;
+///
+/// assert_eq!(
+///     cjsonrs::serde::from_cjson::<Object>(&cjson)?,
+///     Object { hello: "world".to_string(), answer: 42 },
+/// );
+/// # Ok(()) }
+/// ```
 #[inline(always)]
 pub fn from_cjson<'json, T>(value: impl AsRef<CJsonRef<'json>>) -> Result<T, Error>
 where
     T: DeserializeOwned,
 {
-    T::deserialize(value.as_ref())
+    let cjson: &CJsonRef<'_> = value.as_ref();
+    T::deserialize(cjson)
+}
+
+/// Deserializes a value of type `T` that borrows from the given CJson value.
+///
+/// Unlike [`from_cjson`], `T` may contain borrowed data such as `&str`, which
+/// is handed out as a view straight into the cJSON allocation. The borrow keeps
+/// the CJson value alive for as long as the result is.
+///
+/// # Example
+///
+/// ```
+/// # fn main() -> cjsonrs::serde::Result<()> {
+/// let cjson = cjsonrs::cjson!({ c"hello" => c"world" })?;
+///
+/// let borrowed: &str = cjsonrs::serde::from_cjson_borrowed(
+///     cjson.get(c"hello").unwrap(),
+/// )?;
+///
+/// assert_eq!(borrowed, "world");
+/// # Ok(()) }
+/// ```
+#[inline(always)]
+pub fn from_cjson_borrowed<'de, T>(value: &'de CJsonRef<'de>) -> Result<T, Error>
+where
+    T: Deserialize<'de>,
+{
+    T::deserialize(value)
 }
 
 impl serde::de::Error for Error {
     fn custom<T>(msg: T) -> Self
     where
-        T: Display,
+        T: core::fmt::Display,
     {
         Error::Custom(msg.to_string())
     }
 }
 
-impl CJsonRef<'_> {
-    fn unexpected(&self) -> super::Result<Unexpected<'_>> {
+impl<'json> CJsonRef<'json> {
+    /// Describes this value for the benefit of serde's error messages.
+    fn unexpected(&self) -> Unexpected<'_> {
         if self.is_null() {
-            Ok(Unexpected::Unit)
+            Unexpected::Unit
         } else if let Some(b) = self.as_bool() {
-            Ok(Unexpected::Bool(b))
+            Unexpected::Bool(b)
         } else if let Some(n) = self.as_number() {
-            Ok(Unexpected::Float(n))
+            match as_i64(n) {
+                Some(i) => Unexpected::Signed(i),
+                None => Unexpected::Float(n),
+            }
         } else if let Some(s) = self.as_c_string() {
-            Ok(Unexpected::Str(s.to_str()?))
+            match s.to_str() {
+                Ok(s) => Unexpected::Str(s),
+                Err(_) => Unexpected::Other("non UTF-8 string"),
+            }
         } else if self.is_array() {
-            Ok(Unexpected::Seq)
+            Unexpected::Seq
         } else if self.is_object() {
-            Ok(Unexpected::Map)
+            Unexpected::Map
         } else {
-            Err(Error::Custom("cJSON value is unknown".into()))
+            Unexpected::Other("unknown cJSON value")
         }
+    }
+
+    /// Builds an `invalid_type` error describing this value.
+    fn invalid_type(&self, expected: &dyn Expected) -> Error {
+        Error::invalid_type(self.unexpected(), expected)
+    }
+
+    /// Returns the string contents of this value as UTF-8, borrowed for as
+    /// long as this reference lives.
+    fn as_str(&self) -> Option<Result<&str, Error>> {
+        self.as_c_string().map(|s| s.to_str().map_err(Error::from))
     }
 }
 
-impl<'de> Deserialize<'de> for CJson<'static> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::de::Deserializer<'de>,
-    {
-        struct CJsonVisitor;
-
-        impl<'de> Visitor<'de> for CJsonVisitor {
-            type Value = CJson<'static>;
-
-            fn expecting(&self, formatter: &mut Formatter) -> core::fmt::Result {
-                formatter.write_str("any valid JSON value")
-            }
-
+/// Implements an integer `deserialize_*` method.
+///
+/// The number is first narrowed to `i64`/`u64` by `$via`, then converted to
+/// the requested width with a checked conversion. Both steps must be fallible:
+/// cJSON keeps numbers as `double`, so the stored value may be fractional, out
+/// of range, or negative where an unsigned type was asked for.
+macro_rules! deserialize_number {
+    ($($method:ident => $via:ident, $visit:ident($ty:ty);)*) => {
+        $(
             #[inline]
-            fn visit_bool<E: de::Error>(self, value: bool) -> Result<Self::Value, E> {
-                CJson::bool(value).map_err(de::Error::custom)
-            }
-
-            #[inline]
-            fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
-                CJson::number(value as f64).map_err(de::Error::custom)
-            }
-
-            fn visit_i128<E: de::Error>(self, value: i128) -> Result<Self::Value, E> {
-                CJson::number(value as f64).map_err(de::Error::custom)
-            }
-
-            #[inline]
-            fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
-                CJson::number(value as f64).map_err(de::Error::custom)
-            }
-
-            fn visit_u128<E: de::Error>(self, value: u128) -> Result<Self::Value, E>
+            fn $method<V>(self, visitor: V) -> Result<V::Value, Self::Error>
             where
-                E: serde::de::Error,
+                V: Visitor<'de>,
             {
-                CJson::number(value as f64).map_err(de::Error::custom)
-            }
+                let n = self.as_number().ok_or_else(|| self.invalid_type(&visitor))?;
 
-            #[inline]
-            fn visit_f64<E: de::Error>(self, value: f64) -> Result<Self::Value, E> {
-                CJson::number(value).map_err(de::Error::custom)
-            }
-
-            #[inline]
-            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
-                self.visit_string(String::from(value))
-            }
-
-            #[inline]
-            fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
-                let cstring = CString::new(value).map_err(de::Error::custom)?;
-                CJson::string(cstring).map_err(de::Error::custom)
-            }
-
-            #[inline]
-            fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
-                self.visit_unit()
-            }
-
-            #[inline]
-            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-            where
-                D: serde::Deserializer<'de>,
-            {
-                de::Deserialize::deserialize(deserializer)
-            }
-
-            #[inline]
-            fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-                CJson::null().map_err(de::Error::custom)
-            }
-
-            #[inline]
-            fn visit_seq<V>(self, mut visitor: V) -> Result<Self::Value, V::Error>
-            where
-                V: SeqAccess<'de>,
-            {
-                let mut array = CJsonArray::new().map_err(de::Error::custom)?;
-
-                while let Some(elem) = visitor.next_element()? {
-                    let elem: CJson = elem;
-                    array.push(elem);
+                match $via(n).and_then(|n| <$ty>::try_from(n).ok()) {
+                    Some(n) => visitor.$visit(n),
+                    // A number that will not fit the requested type is a value
+                    // error rather than a type error. `unexpected` names it as
+                    // an integer where it can, so the message stays readable.
+                    None => Err(Error::invalid_value(self.unexpected(), &visitor)),
                 }
-
-                Ok(array.into())
             }
-
-            fn visit_map<V>(self, mut visitor: V) -> Result<Self::Value, V::Error>
-            where
-                V: MapAccess<'de>,
-            {
-                let mut obj = CJsonObject::new().map_err(de::Error::custom)?;
-
-                while let Some((key, value)) = visitor.next_entry()? {
-                    let key: String = key;
-                    let value: CJson = value;
-
-                    let key = CString::new(key).map_err(de::Error::custom)?;
-
-                    obj.insert(key, value);
-                }
-
-                Ok(obj.into())
-            }
-        }
-
-        deserializer.deserialize_any(CJsonVisitor)
-    }
+        )*
+    };
 }
 
-impl<'de> de::Deserializer<'de> for &CJsonRef<'de> {
-    type Error = super::Error;
+impl<'de> Deserializer<'de> for &'de CJsonRef<'de> {
+    type Error = Error;
+
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        if let Some(b) = self.as_bool() {
+        if self.is_null() {
+            visitor.visit_unit()
+        } else if let Some(b) = self.as_bool() {
             visitor.visit_bool(b)
         } else if let Some(n) = self.as_number() {
-            visitor.visit_f64(n)
-        } else if let Some(s) = self.as_c_string() {
-            let s = s.to_str().map_err(Self::Error::custom)?;
-            visitor.visit_str(s)
-        } else if self.is_null() {
-            visitor.visit_unit()
-        } else if let Some(ref array_ref) = self.as_array() {
-            array_ref.deserialize_any(visitor)
-        } else if let Some(ref object_ref) = self.as_object() {
-            object_ref.deserialize_any(visitor)
+            // cJSON cannot tell `1` from `1.0`, so report exact integers as
+            // integers. `#[serde(flatten)]` and `#[serde(untagged)]` buffer
+            // through this method and would otherwise reject integer fields.
+            if !is_exact_integer(n) {
+                visitor.visit_f64(n)
+            } else if let Some(n) = as_u64(n) {
+                visitor.visit_u64(n)
+            } else if let Some(n) = as_i64(n) {
+                visitor.visit_i64(n)
+            } else {
+                visitor.visit_f64(n)
+            }
+        } else if let Some(s) = self.as_str() {
+            visitor.visit_borrowed_str(s?)
+        } else if self.is_array() {
+            visitor.visit_seq(ArrayAccess::new(self))
+        } else if self.is_object() {
+            visitor.visit_map(ObjectAccess::new(self))
         } else {
-            Err(de::Error::custom("unknown JSON value"))
+            Err(Error::UnknownValue)
         }
     }
 
@@ -201,120 +227,39 @@ impl<'de> de::Deserializer<'de> for &CJsonRef<'de> {
     where
         V: Visitor<'de>,
     {
-        if let Some(b) = self.as_bool() {
-            visitor.visit_bool(b)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
+        match self.as_bool() {
+            Some(b) => visitor.visit_bool(b),
+            None => Err(self.invalid_type(&visitor)),
         }
     }
 
-    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        if let Some(n) = self.as_number() {
-            visitor.visit_i8(n as i8)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
-        }
-    }
-
-    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        if let Some(n) = self.as_number() {
-            visitor.visit_i16(n as i16)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
-        }
-    }
-
-    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        if let Some(n) = self.as_number() {
-            visitor.visit_i32(n as i32)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
-        }
-    }
-
-    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        if let Some(n) = self.as_number() {
-            visitor.visit_i64(n as i64)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
-        }
-    }
-
-    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        if let Some(n) = self.as_number() {
-            visitor.visit_u8(n as u8)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
-        }
-    }
-
-    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        if let Some(n) = self.as_number() {
-            visitor.visit_u16(n as u16)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
-        }
-    }
-
-    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        if let Some(n) = self.as_number() {
-            visitor.visit_u32(n as u32)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
-        }
-    }
-
-    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        if let Some(n) = self.as_number() {
-            visitor.visit_u64(n as u64)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
-        }
+    deserialize_number! {
+        deserialize_i8 => as_i64, visit_i8(i8);
+        deserialize_i16 => as_i64, visit_i16(i16);
+        deserialize_i32 => as_i64, visit_i32(i32);
+        deserialize_i64 => as_i64, visit_i64(i64);
+        deserialize_i128 => as_i128, visit_i128(i128);
+        deserialize_u8 => as_u64, visit_u8(u8);
+        deserialize_u16 => as_u64, visit_u16(u16);
+        deserialize_u32 => as_u64, visit_u32(u32);
+        deserialize_u64 => as_u64, visit_u64(u64);
+        deserialize_u128 => as_u128, visit_u128(u128);
     }
 
     fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        if let Some(n) = self.as_number() {
-            visitor.visit_f32(n as f32)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
-        }
+        self.deserialize_f64(visitor)
     }
 
     fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        if let Some(n) = self.as_number() {
-            visitor.visit_f64(n)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
+        match self.as_number() {
+            Some(n) => visitor.visit_f64(n),
+            None => Err(self.invalid_type(&visitor)),
         }
     }
 
@@ -322,45 +267,62 @@ impl<'de> de::Deserializer<'de> for &CJsonRef<'de> {
     where
         V: Visitor<'de>,
     {
-        self.deserialize_string(visitor)
+        // The `char` visitor turns a one character string into a `char` and
+        // rejects anything longer.
+        self.deserialize_str(visitor)
     }
 
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        self.deserialize_string(visitor)
+        match self.as_str() {
+            Some(s) => visitor.visit_borrowed_str(s?),
+            None => Err(self.invalid_type(&visitor)),
+        }
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        if let Some(s) = self.as_c_string() {
-            visitor.visit_string(s.to_str().map_err(Self::Error::custom)?.to_owned())
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
-        }
+        self.deserialize_str(visitor)
     }
 
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        self.deserialize_byte_buf(visitor)
+        if let Some(s) = self.as_str() {
+            return visitor.visit_borrowed_bytes(s?.as_bytes());
+        }
+
+        // The serializer writes byte strings as an array of numbers, so accept
+        // that shape back.
+        if self.is_array() {
+            let mut bytes = Vec::with_capacity(self.len() as usize);
+
+            for item in self.iter() {
+                let n = item
+                    .as_number()
+                    .and_then(as_u64)
+                    .and_then(|n| u8::try_from(n).ok())
+                    .ok_or_else(|| item.invalid_type(&"a byte between 0 and 255"))?;
+
+                bytes.push(n);
+            }
+
+            return visitor.visit_byte_buf(bytes);
+        }
+
+        Err(self.invalid_type(&visitor))
     }
 
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        if let Some(s) = self.as_c_string() {
-            visitor.visit_str(s.to_str().map_err(Self::Error::custom)?)
-        } else if let Some(a) = self.as_array() {
-            visit_array(a, visitor)
-        } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
-        }
+        self.deserialize_bytes(visitor)
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -379,9 +341,9 @@ impl<'de> de::Deserializer<'de> for &CJsonRef<'de> {
         V: Visitor<'de>,
     {
         if self.is_null() {
-            visitor.visit_none()
+            visitor.visit_unit()
         } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
+            Err(self.invalid_type(&visitor))
         }
     }
 
@@ -411,10 +373,10 @@ impl<'de> de::Deserializer<'de> for &CJsonRef<'de> {
     where
         V: Visitor<'de>,
     {
-        if let Some(a) = self.as_array() {
-            visit_array(a, visitor)
+        if self.is_array() {
+            visitor.visit_seq(ArrayAccess::new(self))
         } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
+            Err(self.invalid_type(&visitor))
         }
     }
 
@@ -441,10 +403,10 @@ impl<'de> de::Deserializer<'de> for &CJsonRef<'de> {
     where
         V: Visitor<'de>,
     {
-        if let Some(ref object_ref) = self.as_object() {
-            object_ref.deserialize_any(visitor)
+        if self.is_object() {
+            visitor.visit_map(ObjectAccess::new(self))
         } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
+            Err(self.invalid_type(&visitor))
         }
     }
 
@@ -457,391 +419,501 @@ impl<'de> de::Deserializer<'de> for &CJsonRef<'de> {
     where
         V: Visitor<'de>,
     {
-        if let Some(ref array_ref) = self.as_array() {
-            visit_array(array_ref, visitor)
-        } else if let Some(ref object_ref) = self.as_object() {
-            object_ref.deserialize_any(visitor)
+        // A struct may have been written either as an object keyed by field
+        // name or, by a compact encoder, as an array of field values.
+        if self.is_array() {
+            visitor.visit_seq(ArrayAccess::new(self))
         } else {
-            Err(de::Error::invalid_type(self.unexpected()?, &visitor))
+            self.deserialize_map(visitor)
         }
     }
 
     fn deserialize_enum<V>(
         self,
-        name: &'static str,
-        variants: &'static [&'static str],
+        _name: &'static str,
+        _variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        if let Some(ref object_ref) = self.as_object() {
-            object_ref.deserialize_enum(name, variants, visitor)
-        } else if let Some(variant) = self.as_c_string() {
-            visitor.visit_enum(EnumDeserializer {
-                variant: variant.to_str().map_err(Self::Error::custom)?.to_string(),
+        // A unit variant is a bare string; every other variant is an object
+        // holding exactly one entry, keyed by the variant name.
+        if let Some(variant) = self.as_str() {
+            return visitor.visit_enum(EnumAccessor {
+                variant: variant?,
                 value: None,
-            })
-        } else {
-            Err(de::Error::invalid_type(
-                self.unexpected()?,
-                &"string or map",
-            ))
+            });
         }
+
+        if self.is_object() {
+            let mut iter = self.iter();
+
+            let Some(entry) = iter.next() else {
+                return Err(Error::invalid_value(
+                    Unexpected::Map,
+                    &"an object with a single key, the variant name",
+                ));
+            };
+
+            if iter.next().is_some() {
+                return Err(Error::invalid_value(
+                    Unexpected::Map,
+                    &"an object with a single key, the variant name",
+                ));
+            }
+
+            let variant = entry
+                .name()
+                .ok_or_else(|| Error::custom("object entry is missing its key"))?;
+
+            return visitor.visit_enum(EnumAccessor {
+                variant: variant.to_str()?,
+                value: Some(entry),
+            });
+        }
+
+        Err(self.invalid_type(&visitor))
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        self.deserialize_string(visitor)
+        self.deserialize_str(visitor)
     }
 
     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        drop(self);
+        // The value is dropped on the floor, so there is no need to walk it.
         visitor.visit_unit()
     }
 }
 
-impl<'de, R> de::Deserializer<'de> for &'de CJsonArray<R>
+impl<'de> IntoDeserializer<'de, Error> for &'de CJsonRef<'de> {
+    type Deserializer = Self;
+
+    #[inline]
+    fn into_deserializer(self) -> Self::Deserializer {
+        self
+    }
+}
+
+impl<'de> IntoDeserializer<'de, Error> for &'de CJson<'de> {
+    type Deserializer = &'de CJsonRef<'de>;
+
+    #[inline]
+    fn into_deserializer(self) -> Self::Deserializer {
+        self.as_ref()
+    }
+}
+
+impl<'de, R> IntoDeserializer<'de, Error> for &'de CJsonArray<R>
 where
     R: AsRef<CJsonRef<'de>>,
 {
-    type Error = super::Error;
+    type Deserializer = &'de CJsonRef<'de>;
 
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let elements = self.iter().map(|item| item.as_ref());
-        visitor.visit_seq(SeqRefDeserializer::new(elements))
-    }
-
-    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let elements = self.iter().map(|item| item.as_ref());
-        visitor.visit_seq(SeqRefDeserializer::new(elements))
-    }
-
-    fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let elements = self.iter().map(|item| item.as_ref());
-        visitor.visit_seq(SeqRefDeserializer::new(elements))
-    }
-
-    fn deserialize_tuple_struct<V>(
-        self,
-        _name: &'static str,
-        _len: usize,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let elements = self.iter().map(|item| item.as_ref());
-        visitor.visit_seq(SeqRefDeserializer::new(elements))
-    }
-
-    forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 char str string bytes byte_buf option unit
-        unit_struct newtype_struct map struct enum identifier ignored_any
+    #[inline]
+    fn into_deserializer(self) -> Self::Deserializer {
+        self.as_ref()
     }
 }
 
-impl<'de, R> de::Deserializer<'de> for &'de CJsonObject<R>
+impl<'de, R> IntoDeserializer<'de, Error> for &'de CJsonObject<R>
 where
     R: AsRef<CJsonRef<'de>>,
 {
-    type Error = super::Error;
+    type Deserializer = &'de CJsonRef<'de>;
 
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let map = self.iter();
-        visitor.visit_map(MapRefDeserializer::new(map))
-    }
-
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let map = self.iter();
-        visitor.visit_map(MapRefDeserializer::new(map))
-    }
-
-    fn deserialize_struct<V>(
-        self,
-        _name: &'static str,
-        _fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let map = self.iter();
-        visitor.visit_map(MapRefDeserializer::new(map))
-    }
-
-    fn deserialize_enum<V>(
-        self,
-        name: &'static str,
-        variants: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let mut iter = self.iter();
-        let (variant, value) = match iter.next() {
-            Some((k, v)) => (k, v),
-            None => return Err(de::Error::custom("expected enum variant")),
-        };
-        if iter.next().is_some() {
-            return Err(de::Error::custom("expected only one variant"));
-        }
-        visitor.visit_enum(EnumDeserializer {
-            variant: variant.to_str().map_err(super::Error::custom)?.to_owned(),
-            value: Some(value),
-        })
-    }
-
-    forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 char str string bytes byte_buf option unit
-        unit_struct newtype_struct seq tuple tuple_struct identifier ignored_any
+    #[inline]
+    fn into_deserializer(self) -> Self::Deserializer {
+        self.as_ref()
     }
 }
 
-// Sequence deserializer for iterators over &CJsonRef<'de>
-struct SeqRefDeserializer<I>(I);
+/// Walks the elements of a cJSON array.
+struct ArrayAccess<'de> {
+    iter: CJsonIter<'de, 'de>,
+}
 
-impl<'de, I> SeqRefDeserializer<'de, I> {
-    fn new(iter: I) -> Self {
-        SeqRefDeserializer(iter)
+impl<'de> ArrayAccess<'de> {
+    #[inline]
+    fn new(array: &'de CJsonRef<'de>) -> Self {
+        Self { iter: array.iter() }
     }
 }
 
-impl<'de, I> SeqAccess<'de> for SeqRefDeserializer<'de, I>
-where
-    I: Iterator<Item = &'de CJsonRef<'de>>,
-{
-    type Error = super::Error;
-
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
-    where
-        T: DeserializeSeed<'de>,
-    {
-        match self.0.next() {
-            Some(value) => seed.deserialize(value).map(Some),
-            None => Ok(None),
-        }
-    }
-}
-
-// Map deserializer for CJsonObject
-struct MapRefDeserializer<'de, I>
-where
-    I: Iterator<Item = (&'de std::ffi::CStr, &'de CJsonRef<'de>)>,
-{
-    iter: I,
-    value: Option<&'de CJsonRef<'de>>,
-}
-
-impl<'de, I> MapRefDeserializer<'de, I>
-where
-    I: Iterator<Item = (&'de std::ffi::CStr, &'de CJsonRef<'de>)>,
-{
-    fn new(iter: I) -> Self {
-        MapRefDeserializer { iter, value: None }
-    }
-}
-
-impl<'de, I> serde::de::MapAccess<'de> for MapRefDeserializer<'de, I>
-where
-    I: Iterator<Item = (&'de std::ffi::CStr, &'de CJsonRef<'de>)>,
-{
-    type Error = super::Error;
-
-    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
-    where
-        K: serde::de::DeserializeSeed<'de>,
-    {
-        match self.iter.next() {
-            Some((k, v)) => {
-                self.value = Some(v);
-                let key = k.to_str().map_err(super::Error::custom)?;
-                let de = key.into_deserializer();
-                seed.deserialize(de).map(Some)
-            }
-            None => Ok(None),
-        }
-    }
-
-    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
-    where
-        V: serde::de::DeserializeSeed<'de>,
-    {
-        match self.value.take() {
-            Some(v) => seed.deserialize(v),
-            None => Err(de::Error::custom("value is missing for key")),
-        }
-    }
-}
-
-fn visit_array<'de, V>(array: CJsonArray<&CJsonRef<'de>>, visitor: V) -> Result<V::Value, Error>
-where
-    V: Visitor<'de>,
-{
-    let len = array.len();
-    let mut deserializer = SeqDeserializer(array.iter());
-    let seq = visitor.visit_seq(&mut deserializer)?;
-
-    if deserializer.0.next().is_none() {
-        Ok(seq)
-    } else {
-        Err(serde::de::Error::invalid_length(
-            len as _,
-            &"fewer elements in array",
-        ))
-    }
-}
-
-struct SeqDeserializer<I>(I);
-
-struct MapDeserializer<'a, I>
-where
-    I: Iterator,
-{
-    iter: &'a mut I,
-    value: Option<&'a CJsonRef<'a>>,
-}
-
-impl<'de, I> MapDeserializer<'de, I>
-where
-    I: Iterator<Item = (&'de std::ffi::CStr, &'de CJsonRef<'de>)>,
-{
-    fn new(iter: &'de mut I) -> Self {
-        MapDeserializer { iter, value: None }
-    }
-}
-
-impl<'de, I> serde::de::MapAccess<'de> for MapDeserializer<'de, I>
-where
-    I: Iterator<Item = (&'de std::ffi::CStr, &'de CJsonRef<'de>)>,
-{
-    type Error = super::Error;
-
-    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
-    where
-        K: serde::de::DeserializeSeed<'de>,
-    {
-        match self.iter.next() {
-            Some((k, v)) => {
-                self.value = Some(v);
-                let key = k.to_str().map_err(super::Error::custom)?;
-                let de = key.into_deserializer();
-                seed.deserialize(de).map(Some)
-            }
-            None => Ok(None),
-        }
-    }
-
-    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
-    where
-        V: serde::de::DeserializeSeed<'de>,
-    {
-        match self.value.take() {
-            Some(v) => seed.deserialize(v),
-            None => Err(de::Error::custom("value is missing for key")),
-        }
-    }
-}
-
-// EnumDeserializer implementation
-struct EnumDeserializer<'de> {
-    variant: String,
-    value: Option<&'de CJsonRef<'de>>,
-}
-
-impl<'de> serde::de::EnumAccess<'de> for EnumDeserializer<'de> {
-    type Error = super::Error;
-    type Variant = Self;
-
-    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
-    where
-        V: serde::de::DeserializeSeed<'de>,
-    {
-        let val = seed.deserialize(self.variant.into_deserializer())?;
-        Ok((val, self))
-    }
-}
-
-impl<'de> serde::de::VariantAccess<'de> for EnumDeserializer<'de> {
-    type Error = super::Error;
-
-    fn unit_variant(self) -> Result<(), Self::Error> {
-        match self.value {
-            Some(v) => serde::de::Deserialize::deserialize(v).map(|_: ()| ()),
-            None => Ok(()),
-        }
-    }
-
-    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Self::Error>
-    where
-        T: serde::de::DeserializeSeed<'de>,
-    {
-        match self.value {
-            Some(v) => seed.deserialize(v),
-            None => Err(de::Error::custom("expected value for newtype variant")),
-        }
-    }
-
-    fn tuple_variant<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        match self.value {
-            Some(v) => v.deserialize_tuple(len, visitor),
-            None => Err(de::Error::custom("expected value for tuple variant")),
-        }
-    }
-
-    fn struct_variant<V>(
-        self,
-        fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        match self.value {
-            Some(v) => v.deserialize_struct("", fields, visitor),
-            None => Err(de::Error::custom("expected value for struct variant")),
-        }
-    }
-}
-
-impl<'de, I> SeqAccess<'de> for SeqDeserializer<I>
-where
-    I: Iterator,
-    I::Item: AsRef<CJsonRef<'de>>,
-{
+impl<'de> SeqAccess<'de> for ArrayAccess<'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
         T: DeserializeSeed<'de>,
     {
-        match self.0.next() {
-            Some(value) => seed.deserialize(value).map(Some),
+        match self.iter.next() {
+            Some(item) => seed.deserialize(item).map(Some),
             None => Ok(None),
         }
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        match Iterator::size_hint(&self.iter) {
+            (lower, Some(upper)) if lower == upper => Some(upper),
+            _ => None,
+        }
+    }
+}
+
+/// Walks the entries of a cJSON object.
+///
+/// cJSON keeps keys and values in the same node, so a single pass over the
+/// children yields both.
+struct ObjectAccess<'de> {
+    iter: CJsonIter<'de, 'de>,
+    value: Option<&'de CJsonRef<'de>>,
+}
+
+impl<'de> ObjectAccess<'de> {
+    #[inline]
+    fn new(object: &'de CJsonRef<'de>) -> Self {
+        Self {
+            iter: object.iter(),
+            value: None,
+        }
+    }
+}
+
+impl<'de> MapAccess<'de> for ObjectAccess<'de> {
+    type Error = Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
+    where
+        K: DeserializeSeed<'de>,
+    {
+        let Some(entry) = self.iter.next() else {
+            return Ok(None);
+        };
+
+        let key = entry
+            .name()
+            .ok_or_else(|| Error::custom("object entry is missing its key"))?;
+
+        self.value = Some(entry);
+
+        seed.deserialize(MapKeyDeserializer { key: key.to_str()? })
+            .map(Some)
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        let value = self
+            .value
+            .take()
+            .expect("next_value_seed called before next_key_seed");
+
+        seed.deserialize(value)
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        match Iterator::size_hint(&self.iter) {
+            (lower, Some(upper)) if lower == upper => Some(upper),
+            _ => None,
+        }
+    }
+}
+
+/// Deserializes an object key.
+///
+/// JSON keys are always strings, but the map key type on the Rust side need
+/// not be. The serializer writes such keys by formatting them (see
+/// [`MapKeySerializer`](super::MapKeySerializer)), so they are parsed back
+/// here, which keeps a `HashMap<u32, _>` round trip working.
+struct MapKeyDeserializer<'de> {
+    key: &'de str,
+}
+
+/// Implements a `deserialize_*` method that parses the key string.
+macro_rules! deserialize_key_from_str {
+    ($($method:ident => $visit:ident($ty:ty);)*) => {
+        $(
+            #[inline]
+            fn $method<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+            where
+                V: Visitor<'de>,
+            {
+                match self.key.parse::<$ty>() {
+                    Ok(value) => visitor.$visit(value),
+                    Err(_) => Err(Error::invalid_value(Unexpected::Str(self.key), &visitor)),
+                }
+            }
+        )*
+    };
+}
+
+impl<'de> Deserializer<'de> for MapKeyDeserializer<'de> {
+    type Error = Error;
+
+    #[inline]
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_borrowed_str(self.key)
+    }
+
+    deserialize_key_from_str! {
+        deserialize_bool => visit_bool(bool);
+        deserialize_i8 => visit_i8(i8);
+        deserialize_i16 => visit_i16(i16);
+        deserialize_i32 => visit_i32(i32);
+        deserialize_i64 => visit_i64(i64);
+        deserialize_i128 => visit_i128(i128);
+        deserialize_u8 => visit_u8(u8);
+        deserialize_u16 => visit_u16(u16);
+        deserialize_u32 => visit_u32(u32);
+        deserialize_u64 => visit_u64(u64);
+        deserialize_u128 => visit_u128(u128);
+        deserialize_f32 => visit_f32(f32);
+        deserialize_f64 => visit_f64(f64);
+    }
+
+    #[inline]
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        // A key is always present, so it can never be `None`.
+        visitor.visit_some(self)
+    }
+
+    #[inline]
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
+    }
+
+    #[inline]
+    fn deserialize_enum<V>(
+        self,
+        _name: &'static str,
+        _variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        // Only a unit variant can be spelled as a key.
+        visitor.visit_enum(EnumAccessor {
+            variant: self.key,
+            value: None,
+        })
+    }
+
+    forward_to_deserialize_any! {
+        char str string bytes byte_buf unit unit_struct seq tuple tuple_struct
+        map struct identifier ignored_any
+    }
+}
+
+/// Provides the variant name of an enum, along with its payload if it has one.
+struct EnumAccessor<'de> {
+    variant: &'de str,
+    value: Option<&'de CJsonRef<'de>>,
+}
+
+impl<'de> EnumAccess<'de> for EnumAccessor<'de> {
+    type Error = Error;
+    type Variant = VariantAccessor<'de>;
+
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        let variant = seed.deserialize(BorrowedStrDeserializer::<Error>::new(self.variant))?;
+
+        Ok((variant, VariantAccessor { value: self.value }))
+    }
+}
+
+/// Reads the payload of an enum variant.
+struct VariantAccessor<'de> {
+    value: Option<&'de CJsonRef<'de>>,
+}
+
+impl<'de> VariantAccess<'de> for VariantAccessor<'de> {
+    type Error = Error;
+
+    fn unit_variant(self) -> Result<(), Self::Error> {
+        match self.value {
+            None => Ok(()),
+            Some(value) if value.is_null() => Ok(()),
+            Some(value) => Err(value.invalid_type(&"a unit variant")),
+        }
+    }
+
+    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Self::Error>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        match self.value {
+            Some(value) => seed.deserialize(value),
+            None => Err(Error::invalid_type(
+                Unexpected::UnitVariant,
+                &"a newtype variant",
+            )),
+        }
+    }
+
+    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.value {
+            Some(value) if value.is_array() => visitor.visit_seq(ArrayAccess::new(value)),
+            Some(value) => Err(value.invalid_type(&visitor)),
+            None => Err(Error::invalid_type(
+                Unexpected::UnitVariant,
+                &"a tuple variant",
+            )),
+        }
+    }
+
+    fn struct_variant<V>(
+        self,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.value {
+            Some(value) if value.is_object() => visitor.visit_map(ObjectAccess::new(value)),
+            Some(value) => Err(value.invalid_type(&visitor)),
+            None => Err(Error::invalid_type(
+                Unexpected::UnitVariant,
+                &"a struct variant",
+            )),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CJson<'static> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CJsonVisitor;
+
+        impl<'de> Visitor<'de> for CJsonVisitor {
+            type Value = CJson<'static>;
+
+            fn expecting(&self, formatter: &mut Formatter) -> core::fmt::Result {
+                formatter.write_str("any valid JSON value")
+            }
+
+            #[inline]
+            fn visit_bool<E: de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                CJson::bool(value).map_err(de::Error::custom)
+            }
+
+            #[inline]
+            fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                self.visit_f64(value as f64)
+            }
+
+            #[inline]
+            fn visit_i128<E: de::Error>(self, value: i128) -> Result<Self::Value, E> {
+                self.visit_f64(value as f64)
+            }
+
+            #[inline]
+            fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                self.visit_f64(value as f64)
+            }
+
+            #[inline]
+            fn visit_u128<E: de::Error>(self, value: u128) -> Result<Self::Value, E> {
+                self.visit_f64(value as f64)
+            }
+
+            #[inline]
+            fn visit_f64<E: de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                CJson::number(value).map_err(de::Error::custom)
+            }
+
+            #[inline]
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                let cstring = CString::new(value).map_err(de::Error::custom)?;
+                CJson::string(cstring).map_err(de::Error::custom)
+            }
+
+            #[inline]
+            fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+                let cstring = CString::new(value).map_err(de::Error::custom)?;
+                CJson::string(cstring).map_err(de::Error::custom)
+            }
+
+            #[inline]
+            fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                self.visit_unit()
+            }
+
+            #[inline]
+            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                Deserialize::deserialize(deserializer)
+            }
+
+            #[inline]
+            fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+                CJson::null().map_err(de::Error::custom)
+            }
+
+            fn visit_seq<V>(self, mut visitor: V) -> Result<Self::Value, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let mut array: CJsonArray<CJson<'static>> =
+                    CJsonArray::new().map_err(de::Error::custom)?;
+
+                while let Some(elem) = visitor.next_element::<CJson<'static>>()? {
+                    array.push(elem);
+                }
+
+                Ok(array.into())
+            }
+
+            fn visit_map<V>(self, mut visitor: V) -> Result<Self::Value, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let mut object: CJsonObject<CJson<'static>> =
+                    CJsonObject::new().map_err(de::Error::custom)?;
+
+                while let Some(key) = visitor.next_key::<String>()? {
+                    let key = CString::new(key).map_err(de::Error::custom)?;
+                    let value = visitor.next_value::<CJson<'static>>()?;
+
+                    object.insert(key, value);
+                }
+
+                Ok(object.into())
+            }
+        }
+
+        deserializer.deserialize_any(CJsonVisitor)
     }
 }

@@ -153,7 +153,7 @@ fn assert_that_numbers_can_be_deserialized_from_cjson() -> Result<(), Box<dyn st
 fn assert_that_booleans_can_be_deserialized_from_cjson() -> Result<(), Box<dyn std::error::Error>> {
     let cjson = cjson!(true)?;
     let b: bool = from_cjson(&cjson)?;
-    assert_eq!(b, true);
+    assert!(b);
     Ok(())
 }
 

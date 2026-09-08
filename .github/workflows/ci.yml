@@ -36,6 +36,7 @@ jobs:
       - run: |-
           rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
       - run: cargo clippy
+      - run: cargo clippy --all-features --all-targets
 
   fmt:
     name: fmt - stable
@@ -90,6 +91,8 @@ jobs:
           rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
       - run: cargo build --verbose
       - run: cargo test --verbose
+      - run: cargo build --verbose --all-features
+      - run: cargo test --verbose --all-features
 
   build_and_test_no_std:
     name: cjsonrs - latest
@@ -119,3 +122,5 @@ jobs:
           rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
       - run: cargo build --verbose --no-default-features
       - run: cargo test --verbose --no-default-features --features vendored
+        # `serde` pulls in `alloc`, but still has to build without `std`.
+      - run: cargo build --verbose --no-default-features --features vendored,serde

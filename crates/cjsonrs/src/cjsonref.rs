@@ -1,10 +1,5 @@
-cfg_if::cfg_if! {
-    if #[cfg(feature = "alloc")] {
-        extern crate alloc;
-        use alloc::borrow::ToOwned;
-    }
-}
-
+#[cfg(any(feature = "std", feature = "alloc"))]
+use alloc::borrow::ToOwned;
 use core::ffi::CStr;
 use core::fmt::Debug;
 use core::fmt::Display;
@@ -165,8 +160,10 @@ impl<'json> CJsonRef<'json> {
         let ptr = self.as_ptr();
 
         unsafe {
-            let ptr = cjsonrs_sys::cJSON_GetStringValue(ptr);
-            Some(CStr::from_ptr(ptr))
+            // `cJSON_GetStringValue` hands back `valuestring` verbatim, which a
+            // tree built by foreign C code may have left null.
+            let ptr = NonNull::new(cjsonrs_sys::cJSON_GetStringValue(ptr))?;
+            Some(CStr::from_ptr(ptr.as_ptr()))
         }
     }
 
@@ -273,6 +270,9 @@ impl<'json> CJsonRef<'json> {
 
         CJsonIter {
             cjson,
+            // Counted here, on the parent, because the cursor below walks the
+            // sibling chain and can no longer ask for the total.
+            remaining: self.len().max(0) as usize,
             _phantom: PhantomData,
         }
     }
@@ -383,7 +383,7 @@ impl<'json> AsMut<CJsonRef<'json>> for CJsonRef<'json> {
 
 impl<'a, 'json> IntoIterator for &'a CJsonRef<'json>
 where
-    'a: 'json,
+    'json: 'a,
 {
     type IntoIter = CJsonIter<'a, 'json>;
     type Item = &'a CJsonRef<'json>;
@@ -403,6 +403,7 @@ unsafe impl Sync for CJsonRef<'_> {}
 /// An iterator for [`CJsonRef`] objects and arrays.
 pub struct CJsonIter<'r, 'json> {
     cjson: *const cjsonrs_sys::cJSON,
+    remaining: usize,
     _phantom: PhantomData<(&'r (), &'json ())>,
 }
 
@@ -413,14 +414,7 @@ where
     type Item = &'r CJsonRef<'json>;
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        if self.cjson.is_null() {
-            return (0, Some(0));
-        }
-
-        let cjson = unsafe { CJsonRef::from_ptr(self.cjson) };
-        let len = cjson.len() as _;
-
-        (len, Some(len))
+        (self.remaining, Some(self.remaining))
     }
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -430,6 +424,7 @@ where
 
         let result = Some(unsafe { CJsonRef::from_ptr(self.cjson) });
         self.cjson = unsafe { *self.cjson }.next;
+        self.remaining = self.remaining.saturating_sub(1);
         result
     }
 }

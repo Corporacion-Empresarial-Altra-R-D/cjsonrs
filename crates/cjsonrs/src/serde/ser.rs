@@ -1,16 +1,11 @@
-cfg_if::cfg_if! {
-    if #[cfg(feature = "std")] {
-        use std::ffi::CString;
-    } else if #[cfg(feature = "alloc")] {
-        extern crate alloc;
+use alloc::borrow::ToOwned;
+use alloc::ffi::CString;
+use alloc::format;
+use alloc::string::ToString;
 
-        use alloc::borrow::ToOwned;
-        use alloc::borrow::ffi::CString;
-        use alloc::borrow::format;
-        use alloc::borrow::string::ToString;
-    }
-}
-
+use super::number::as_i64;
+use super::number::as_u64;
+use super::number::is_exact_integer;
 use super::Error;
 use crate::CJson;
 use crate::CJsonArray;
@@ -77,7 +72,19 @@ impl Serialize for CJsonRef<'_> {
         if let Some(b) = self.as_bool() {
             serializer.serialize_bool(b)
         } else if let Some(n) = self.as_number() {
-            serializer.serialize_f64(n)
+            // cJSON has only a `double`, but its own printer renders an exact
+            // integral value without a fractional part. Match that, so writing
+            // a CJson value out through another Serde format agrees with
+            // `CJsonRef::to_c_string` and with `Deserializer::deserialize_any`.
+            if !is_exact_integer(n) {
+                serializer.serialize_f64(n)
+            } else if let Some(n) = as_u64(n) {
+                serializer.serialize_u64(n)
+            } else if let Some(n) = as_i64(n) {
+                serializer.serialize_i64(n)
+            } else {
+                serializer.serialize_f64(n)
+            }
         } else if let Some(s) = self.as_c_string() {
             let s = s.to_str().map_err(serde::ser::Error::custom)?;
             serializer.serialize_str(s)
@@ -144,6 +151,14 @@ impl serde::Serializer for Serializer {
     }
 
     fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
+        self.serialize_f64(v as _)
+    }
+
+    fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error> {
+        self.serialize_f64(v as _)
+    }
+
+    fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
         self.serialize_f64(v as _)
     }
 
