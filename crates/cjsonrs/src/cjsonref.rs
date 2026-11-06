@@ -3,6 +3,7 @@ use alloc::borrow::ToOwned;
 use core::ffi::CStr;
 use core::fmt::Debug;
 use core::fmt::Display;
+use core::fmt::Write as _;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
@@ -312,7 +313,13 @@ impl Display for CJsonRef<'_> {
         };
         let s = s.map_err(|_| core::fmt::Error)?;
 
-        f.write_str(s.to_str().map_err(|_| core::fmt::Error)?)
+        for chunk in s.to_bytes().utf8_chunks() {
+            f.write_str(chunk.valid())?;
+            if !chunk.invalid().is_empty() {
+                f.write_char(char::REPLACEMENT_CHARACTER)?;
+            }
+        }
+        Ok(())
     }
 }
 
