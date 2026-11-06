@@ -38,7 +38,7 @@ impl CJson<'_> {
     /// This function returns an error if the allocation fails.
     #[inline(always)]
     pub fn null() -> Result<Self, Error> {
-        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateNull(), Error::Parse) }
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateNull(), Error::Allocation) }
     }
 
     /// Constructs a new [`CJson`] value representing a boolean value.
@@ -49,7 +49,7 @@ impl CJson<'_> {
     #[inline(always)]
     pub fn bool(b: impl Into<bool>) -> Result<Self, Error> {
         let b = b.into();
-        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateBool(b as _), Error::Parse) }
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateBool(b as _), Error::Allocation) }
     }
 
     /// Constructs a new [`CJson`] value representing a number value.
@@ -59,7 +59,7 @@ impl CJson<'_> {
     /// This function returns an error if the allocation fails.
     #[inline(always)]
     pub fn number(n: impl Into<f64>) -> Result<Self, Error> {
-        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateNumber(n.into()), Error::Parse) }
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateNumber(n.into()), Error::Allocation) }
     }
 
     /// Constructs a new [`CJson`] value representing a string value.
@@ -70,7 +70,7 @@ impl CJson<'_> {
     #[inline(always)]
     pub fn string(s: impl AsRef<CStr>) -> Result<Self, Error> {
         let s = s.as_ref().as_ptr();
-        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateString(s), Error::Parse) }
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateString(s), Error::Allocation) }
     }
 
     /// Constructs a new [`CJson`] value representing an array value.
@@ -80,7 +80,7 @@ impl CJson<'_> {
     /// This function returns an error if the allocation fails.
     #[inline(always)]
     pub fn array() -> Result<Self, Error> {
-        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateArray(), Error::Parse) }
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateArray(), Error::Allocation) }
     }
 
     /// Constructs a new [`CJson`] value representing an object value.
@@ -90,7 +90,7 @@ impl CJson<'_> {
     /// This function returns an error if the allocation fails.
     #[inline(always)]
     pub fn object() -> Result<Self, Error> {
-        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateObject(), Error::Parse) }
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateObject(), Error::Allocation) }
     }
 
     /// Parses a C string into a [`CJson`] value.
