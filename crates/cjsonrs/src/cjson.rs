@@ -38,13 +38,7 @@ impl CJson<'_> {
     /// This function returns an error if the allocation fails.
     #[inline(always)]
     pub fn null() -> Result<Self, Error> {
-        let cjson = unsafe { cjsonrs_sys::cJSON_CreateNull() };
-
-        if let Some(ptr) = NonNull::new(cjson) {
-            Ok(unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'_ ()>) })
-        } else {
-            Err(Error::Parse)
-        }
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateNull(), Error::Parse) }
     }
 
     /// Constructs a new [`CJson`] value representing a boolean value.
@@ -55,13 +49,7 @@ impl CJson<'_> {
     #[inline(always)]
     pub fn bool(b: impl Into<bool>) -> Result<Self, Error> {
         let b = b.into();
-        let cjson = unsafe { cjsonrs_sys::cJSON_CreateBool(b as _) };
-
-        if let Some(ptr) = NonNull::new(cjson) {
-            Ok(unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'_ ()>) })
-        } else {
-            Err(Error::Parse)
-        }
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateBool(b as _), Error::Parse) }
     }
 
     /// Constructs a new [`CJson`] value representing a number value.
@@ -71,12 +59,7 @@ impl CJson<'_> {
     /// This function returns an error if the allocation fails.
     #[inline(always)]
     pub fn number(n: impl Into<f64>) -> Result<Self, Error> {
-        let cjson = unsafe { cjsonrs_sys::cJSON_CreateNumber(n.into()) };
-        if let Some(ptr) = NonNull::new(cjson) {
-            Ok(unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'_ ()>) })
-        } else {
-            Err(Error::Parse)
-        }
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateNumber(n.into()), Error::Parse) }
     }
 
     /// Constructs a new [`CJson`] value representing a string value.
@@ -86,12 +69,8 @@ impl CJson<'_> {
     /// This function returns an error if the allocation fails.
     #[inline(always)]
     pub fn string(s: impl AsRef<CStr>) -> Result<Self, Error> {
-        let cjson = unsafe { cjsonrs_sys::cJSON_CreateString(s.as_ref().as_ptr()) };
-        if let Some(ptr) = NonNull::new(cjson) {
-            Ok(unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'_ ()>) })
-        } else {
-            Err(Error::Parse)
-        }
+        let s = s.as_ref().as_ptr();
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateString(s), Error::Parse) }
     }
 
     /// Constructs a new [`CJson`] value representing an array value.
@@ -101,12 +80,7 @@ impl CJson<'_> {
     /// This function returns an error if the allocation fails.
     #[inline(always)]
     pub fn array() -> Result<Self, Error> {
-        let cjson = unsafe { cjsonrs_sys::cJSON_CreateArray() };
-        if let Some(ptr) = NonNull::new(cjson) {
-            Ok(unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'_ ()>) })
-        } else {
-            Err(Error::Parse)
-        }
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateArray(), Error::Parse) }
     }
 
     /// Constructs a new [`CJson`] value representing an object value.
@@ -116,12 +90,7 @@ impl CJson<'_> {
     /// This function returns an error if the allocation fails.
     #[inline(always)]
     pub fn object() -> Result<Self, Error> {
-        let cjson = unsafe { cjsonrs_sys::cJSON_CreateObject() };
-        if let Some(ptr) = NonNull::new(cjson) {
-            Ok(unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'_ ()>) })
-        } else {
-            Err(Error::Parse)
-        }
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_CreateObject(), Error::Parse) }
     }
 
     /// Parses a C string into a [`CJson`] value.
@@ -132,13 +101,8 @@ impl CJson<'_> {
     /// allocation fails.
     #[inline(always)]
     pub fn from_c_str(s: impl AsRef<CStr>) -> Result<Self, Error> {
-        let cjson = unsafe { cjsonrs_sys::cJSON_Parse(s.as_ref().as_ptr()) };
-
-        if let Some(ptr) = NonNull::new(cjson) {
-            Ok(unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'_ ()>) })
-        } else {
-            Err(Error::Parse)
-        }
+        let s = s.as_ref().as_ptr();
+        unsafe { Self::from_ptr_or(cjsonrs_sys::cJSON_Parse(s), Error::Parse) }
     }
 
     /// Parses a byte slice into a [`CJson`] value.
@@ -150,12 +114,7 @@ impl CJson<'_> {
     #[inline(always)]
     pub fn from_slice(s: &[u8]) -> Result<Self, Error> {
         let cjson = unsafe { cjsonrs_sys::cJSON_ParseWithLength(s.as_ptr() as _, s.len()) };
-
-        if let Some(ptr) = NonNull::new(cjson) {
-            Ok(unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'_ ()>) })
-        } else {
-            Err(Error::Parse)
-        }
+        unsafe { Self::from_ptr_or(cjson, Error::Parse) }
     }
 }
 
@@ -168,34 +127,42 @@ impl<'json> CJson<'json> {
     /// This function returns an error if the allocation fails.
     #[inline(always)]
     pub fn string_reference(s: &'json CStr) -> Result<Self, Error> {
-        let cjson = unsafe { cjsonrs_sys::cJSON_CreateStringReference(s.as_ptr()) };
-        if let Some(ptr) = NonNull::new(cjson) {
-            Ok(unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'json ()>) })
-        } else {
-            Err(Error::Allocation)
+        let s = s.as_ptr();
+        unsafe {
+            Self::from_ptr_or(
+                cjsonrs_sys::cJSON_CreateStringReference(s),
+                Error::Allocation,
+            )
         }
+    }
+
+    /// Takes ownership of `cjson`, or returns `error` if it is null.
+    ///
+    /// # Safety
+    ///
+    /// `cjson` must be null or a valid, uniquely owned [`cjsonrs_sys::cJSON`]
+    /// value whose borrowed data outlives `'json`.
+    #[inline(always)]
+    unsafe fn from_ptr_or(cjson: *mut cjsonrs_sys::cJSON, error: Error) -> Result<Self, Error> {
+        NonNull::new(cjson)
+            .map(|ptr| Self::from_raw_parts(ptr, PhantomData::<&'json ()>))
+            .ok_or(error)
     }
 
     /// Returns the underlying [`cjsonrs_sys::cJSON`] object as an owned
     /// array, if possible.
     #[inline(always)]
     pub fn into_array(self) -> Option<CJsonArray<Self>> {
-        if self.is_array() {
-            unsafe { Some(CJsonArray::from_raw_parts(self)) }
-        } else {
-            None
-        }
+        self.is_array()
+            .then(|| unsafe { CJsonArray::from_raw_parts(self) })
     }
 
     /// Returns the underlying [`cjsonrs_sys::cJSON`] object as an owned
     /// object, if possible.
     #[inline(always)]
     pub fn into_object(self) -> Option<CJsonObject<Self>> {
-        if self.is_object() {
-            unsafe { Some(CJsonObject::from_raw_parts(self)) }
-        } else {
-            None
-        }
+        self.is_object()
+            .then(|| unsafe { CJsonObject::from_raw_parts(self) })
     }
 
     /// Constructs a [`CJson`] value from raw parts.
@@ -333,11 +300,7 @@ where
     type Error = Error;
 
     fn try_from(value: Option<T>) -> Result<Self, Self::Error> {
-        if let Some(value) = value {
-            value.try_into()
-        } else {
-            CJson::null()
-        }
+        value.map_or_else(CJson::null, TryInto::try_into)
     }
 }
 

@@ -48,9 +48,7 @@ impl Drop for CJsonString {
 
 impl AsRef<CStr> for CJsonString {
     fn as_ref(&self) -> &CStr {
-        let slice =
-            unsafe { core::slice::from_raw_parts(self.ptr.as_ptr() as *const u8, self.len) };
-        unsafe { CStr::from_bytes_with_nul_unchecked(slice) }
+        self
     }
 }
 
@@ -58,15 +56,15 @@ impl Deref for CJsonString {
     type Target = CStr;
 
     fn deref(&self) -> &Self::Target {
-        self.as_ref()
+        let slice =
+            unsafe { core::slice::from_raw_parts(self.ptr.as_ptr() as *const u8, self.len) };
+        unsafe { CStr::from_bytes_with_nul_unchecked(slice) }
     }
 }
 
 impl PartialEq for CJsonString {
     fn eq(&self, other: &Self) -> bool {
-        let s1: &CStr = self.as_ref();
-        let s2: &CStr = other.as_ref();
-        s1 == s2
+        **self == **other
     }
 }
 
@@ -74,37 +72,31 @@ impl Eq for CJsonString {}
 
 impl PartialOrd for CJsonString {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        let s1: &CStr = self.as_ref();
-        let s2: &CStr = other.as_ref();
-        s1.partial_cmp(s2)
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for CJsonString {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        let s1: &CStr = self.as_ref();
-        let s2: &CStr = other.as_ref();
-        s1.cmp(s2)
+        (**self).cmp(&**other)
     }
 }
 
 impl Debug for CJsonString {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        let s: &CStr = self.as_ref();
-        Debug::fmt(s, f)
+        Debug::fmt(&**self, f)
     }
 }
 
 impl Borrow<CStr> for CJsonString {
     fn borrow(&self) -> &CStr {
-        self.as_ref()
+        self
     }
 }
 
 impl Hash for CJsonString {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        let s: &CStr = self.as_ref();
-        s.hash(state)
+        (**self).hash(state)
     }
 }
 

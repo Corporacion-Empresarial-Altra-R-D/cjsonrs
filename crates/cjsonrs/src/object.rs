@@ -50,18 +50,10 @@ where
     /// Returns a reference to the value associated with the given key, if any.
     #[inline(always)]
     pub fn get(&self, key: impl AsRef<CStr>) -> Option<&CJsonRef<'json>> {
-        let cjsonref = self.inner.as_ref();
-        let ptr = cjsonref.as_ptr();
+        let ptr = self.inner.as_ref().as_ptr();
         let cjson =
             unsafe { cjsonrs_sys::cJSON_GetObjectItemCaseSensitive(ptr, key.as_ref().as_ptr()) };
-
-        let result = if cjson.is_null() {
-            None
-        } else {
-            Some(unsafe { CJsonRef::from_ptr(cjson) })
-        };
-
-        result
+        (!cjson.is_null()).then(|| unsafe { CJsonRef::from_ptr(cjson) })
     }
 
     /// Returns a iterator over the key-value pairs of the object.
@@ -90,7 +82,7 @@ where
         self.inner
             .as_ref()
             .iter()
-            .map(|item| ({ item.name().unwrap() }, item))
+            .map(|item| (item.name().expect("object entries carry a key"), item))
     }
 
     /// Returns the number of key value pairs in the object.
@@ -113,7 +105,10 @@ where
     where
         'json: 'a,
     {
-        self.inner.as_ref().iter().map(|item| item.name().unwrap())
+        self.inner
+            .as_ref()
+            .iter()
+            .map(|item| item.name().expect("object entries carry a key"))
     }
 
     /// Returns a iterator over values of the object. The iterator yields the
@@ -134,18 +129,10 @@ where
     /// if any.
     #[inline(always)]
     pub fn get_mut(&mut self, key: impl AsRef<CStr>) -> Option<&mut CJsonRef<'json>> {
-        let cjsonref = self.inner.as_mut();
-        let ptr = cjsonref.as_mut_ptr();
+        let ptr = self.inner.as_mut().as_mut_ptr();
         let cjson =
             unsafe { cjsonrs_sys::cJSON_GetObjectItemCaseSensitive(ptr, key.as_ref().as_ptr()) };
-
-        let result = if cjson.is_null() {
-            None
-        } else {
-            Some(unsafe { CJsonRef::from_mut_ptr(cjson) })
-        };
-
-        result
+        (!cjson.is_null()).then(|| unsafe { CJsonRef::from_mut_ptr(cjson) })
     }
 
     /// Removes the value associated with the given key.
@@ -251,11 +238,7 @@ impl<'json> TryFrom<CJson<'json>> for CJsonObject<CJson<'json>> {
     type Error = Error;
 
     fn try_from(value: CJson<'json>) -> Result<Self, Self::Error> {
-        if value.is_object() {
-            Ok(unsafe { CJsonObject::from_raw_parts(value) })
-        } else {
-            Err(Error::TypeError)
-        }
+        value.into_object().ok_or(Error::TypeError)
     }
 }
 
@@ -294,32 +277,6 @@ impl<'json, 'a> From<CJsonObject<&'a mut CJsonRef<'json>>> for &'a mut CJsonRef<
         value.inner
     }
 }
-// macro_rules! index_object {
-//     ($index_type:ty, $get_fn:ident, $get_mut_fn:ident) => {
-//         impl<'json, T> Index<$index_type> for CJsonObject<T>
-//         where
-//             T: AsRef<CJsonRef<'json>>,
-//         {
-//             type Output = CJsonRef<'json>;
-//
-//             fn index(&self, index: $index_type) -> &Self::Output {
-//                 self.$get_fn(index)
-//                     .unwrap_or_else(|| panic!("Failed to index CJsonRef"))
-//             }
-//         }
-//
-//         impl<T> IndexMut<$index_type> for CJsonObject<T>
-//         where
-//             T: AsMut<CJsonRef> + AsRef<CJsonRef>,
-//         {
-//             fn index_mut(&mut self, index: $index_type) -> &mut Self::Output
-// {                 self.$get_mut_fn(index)
-//                     .unwrap_or_else(|| panic!("Failed to index CJsonRef"))
-//             }
-//         }
-//     };
-// }
-
 macro_rules! index_object {
     ($index_type:ty, $reference_type:ty, $get_fn:ident) => {
         impl<'json> Index<$index_type> for CJsonObject<$reference_type> {

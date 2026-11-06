@@ -449,19 +449,12 @@ impl<'de> Deserializer<'de> for &'de CJsonRef<'de> {
         if self.is_object() {
             let mut iter = self.iter();
 
-            let Some(entry) = iter.next() else {
+            let (Some(entry), None) = (iter.next(), iter.next()) else {
                 return Err(Error::invalid_value(
                     Unexpected::Map,
                     &"an object with a single key, the variant name",
                 ));
             };
-
-            if iter.next().is_some() {
-                return Err(Error::invalid_value(
-                    Unexpected::Map,
-                    &"an object with a single key, the variant name",
-                ));
-            }
 
             let variant = entry
                 .name()
@@ -560,10 +553,7 @@ impl<'de> SeqAccess<'de> for ArrayAccess<'de> {
     }
 
     fn size_hint(&self) -> Option<usize> {
-        match Iterator::size_hint(&self.iter) {
-            (lower, Some(upper)) if lower == upper => Some(upper),
-            _ => None,
-        }
+        Iterator::size_hint(&self.iter).1
     }
 }
 
@@ -620,10 +610,7 @@ impl<'de> MapAccess<'de> for ObjectAccess<'de> {
     }
 
     fn size_hint(&self) -> Option<usize> {
-        match Iterator::size_hint(&self.iter) {
-            (lower, Some(upper)) if lower == upper => Some(upper),
-            _ => None,
-        }
+        Iterator::size_hint(&self.iter).1
     }
 }
 
