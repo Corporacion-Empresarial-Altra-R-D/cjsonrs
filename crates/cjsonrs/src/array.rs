@@ -1,3 +1,4 @@
+use core::ffi::c_int;
 use core::fmt::Debug;
 use core::fmt::Display;
 use core::marker::PhantomData;
@@ -47,8 +48,9 @@ where
     /// Returns a reference to the value at the given index, if any.
     #[inline(always)]
     pub fn get(&self, index: impl Into<u32>) -> Option<&CJsonRef<'json>> {
+        let index = c_int::try_from(index.into()).ok()?;
         let ptr = self.inner.as_ref().as_ptr();
-        let cjson = unsafe { cjsonrs_sys::cJSON_GetArrayItem(ptr, index.into() as _) };
+        let cjson = unsafe { cjsonrs_sys::cJSON_GetArrayItem(ptr, index) };
         (!cjson.is_null()).then(|| unsafe { CJsonRef::from_ptr(cjson) })
     }
 
@@ -83,8 +85,9 @@ where
     /// Returns a mutable reference to the value at the given index, if any.
     #[inline(always)]
     pub fn get_mut(&mut self, index: impl Into<u32>) -> Option<&mut CJsonRef<'json>> {
+        let index = c_int::try_from(index.into()).ok()?;
         let ptr = self.inner.as_mut().as_mut_ptr();
-        let cjson = unsafe { cjsonrs_sys::cJSON_GetArrayItem(ptr, index.into() as _) };
+        let cjson = unsafe { cjsonrs_sys::cJSON_GetArrayItem(ptr, index) };
         (!cjson.is_null()).then(|| unsafe { CJsonRef::from_mut_ptr(cjson) })
     }
 
@@ -95,10 +98,9 @@ where
     /// If the index is not present, this function returns `None`.
     #[inline(always)]
     pub fn remove(&mut self, index: impl Into<u32>) -> Option<CJson<'json>> {
-        let index = index.into();
-        let cjsonref = self.inner.as_mut();
-        let ptr = cjsonref.as_mut_ptr();
-        let cjson = unsafe { cjsonrs_sys::cJSON_DetachItemFromArray(ptr, index as _) };
+        let index = c_int::try_from(index.into()).ok()?;
+        let ptr = self.inner.as_mut().as_mut_ptr();
+        let cjson = unsafe { cjsonrs_sys::cJSON_DetachItemFromArray(ptr, index) };
 
         NonNull::new(cjson)
             .map(|ptr| unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'json ()>) })
@@ -127,12 +129,12 @@ where
     where
         'a: 'json,
     {
-        let index = index.into();
+        let index = c_int::try_from(index.into()).unwrap_or(c_int::MAX);
         let value = value.into();
         let cjsonref = self.inner.as_mut();
         let ptr = cjsonref.as_mut_ptr();
         let return_code = unsafe {
-            cjsonrs_sys::cJSON_InsertItemInArray(ptr, index as _, value.into_raw_parts().as_ptr())
+            cjsonrs_sys::cJSON_InsertItemInArray(ptr, index, value.into_raw_parts().as_ptr())
         };
 
         // We met all preconditions, so this should never fail.

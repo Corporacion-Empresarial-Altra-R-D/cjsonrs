@@ -65,6 +65,26 @@ fn array_writes_insert_and_remove_items() -> TestResult {
 }
 
 #[test]
+fn inserting_past_the_c_int_range_appends_instead_of_panicking() -> TestResult {
+    let mut array = cjson!([1])?;
+
+    array.insert(u32::MAX, CJson::number(2)?);
+    assert_eq!(array, cjson!([1, 2])?);
+    Ok(())
+}
+
+#[test]
+fn indices_past_the_c_int_range_are_missing() -> TestResult {
+    let mut array = cjson!([1])?;
+
+    assert_eq!(array.get(u32::MAX), None);
+    assert!(array.get_mut(u32::MAX).is_none());
+    assert_eq!(array.remove(u32::MAX), None);
+    assert_eq!(array, cjson!([1])?);
+    Ok(())
+}
+
+#[test]
 fn array_items_can_be_mutated_in_place() -> TestResult {
     let mut array = cjson!([[], 1])?;
 
@@ -323,9 +343,10 @@ fn values_display_compact_or_pretty() -> TestResult {
 }
 
 #[test]
-fn displaying_a_non_utf8_string_fails() -> TestResult {
-    let value = CJson::string(c"\xff")?;
-    assert_eq!(display(&value), Err(core::fmt::Error));
+fn displaying_a_non_utf8_string_replaces_invalid_bytes() -> TestResult {
+    let value = CJson::string(c"a\xffb")?;
+    assert_eq!(display(&value)?, "\"a\u{FFFD}b\"");
+    assert_eq!(value.to_string(), "\"a\u{FFFD}b\"");
     Ok(())
 }
 
