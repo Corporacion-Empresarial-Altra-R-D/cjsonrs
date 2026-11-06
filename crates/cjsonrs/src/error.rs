@@ -17,7 +17,7 @@ pub enum Error {
 }
 
 impl From<Infallible> for Error {
-    fn from(_: Infallible) -> Self {
-        unreachable!("Infallible type should never be constructed")
+    fn from(never: Infallible) -> Self {
+        match never {}
     }
 }

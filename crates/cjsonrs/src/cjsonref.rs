@@ -130,24 +130,16 @@ impl<'json> CJsonRef<'json> {
     /// possible.
     #[inline(always)]
     pub fn as_bool(&self) -> Option<bool> {
-        if !self.is_bool() {
-            return None;
-        }
-        let ptr = self.as_ptr();
-
-        Some(unsafe { cjsonrs_sys::cJSON_IsTrue(ptr) != 0 })
+        self.is_bool()
+            .then(|| unsafe { cjsonrs_sys::cJSON_IsTrue(self.as_ptr()) != 0 })
     }
 
     /// Returns the underlying [`cjsonrs_sys::cJSON`] object as a number, if
     /// possible.
     #[inline(always)]
     pub fn as_number(&self) -> Option<f64> {
-        if !self.is_number() {
-            return None;
-        }
-        let ptr = self.as_ptr();
-
-        Some(unsafe { cjsonrs_sys::cJSON_GetNumberValue(ptr) })
+        self.is_number()
+            .then(|| unsafe { cjsonrs_sys::cJSON_GetNumberValue(self.as_ptr()) })
     }
 
     /// Returns the underlying [`cjsonrs_sys::cJSON`] object as a cstring, if
@@ -171,78 +163,59 @@ impl<'json> CJsonRef<'json> {
     /// possible.
     #[inline(always)]
     pub fn as_array(&self) -> Option<CJsonArray<&Self>> {
-        if self.is_array() {
-            unsafe { Some(CJsonArray::from_raw_parts(self)) }
-        } else {
-            None
-        }
+        self.is_array()
+            .then(|| unsafe { CJsonArray::from_raw_parts(self) })
     }
 
     /// Returns the underlying [`cjsonrs_sys::cJSON`] object as a mutable
     /// array, if possible.
     #[inline(always)]
     pub fn as_mut_array(&mut self) -> Option<CJsonArray<&mut Self>> {
-        if self.is_array() {
-            unsafe { Some(CJsonArray::from_raw_parts(self)) }
-        } else {
-            None
-        }
+        self.is_array()
+            .then(|| unsafe { CJsonArray::from_raw_parts(self) })
     }
 
     /// Returns the underlying [`cjsonrs_sys::cJSON`] object as an object, if
     /// possible.
     #[inline(always)]
     pub fn as_object(&self) -> Option<CJsonObject<&Self>> {
-        if self.is_object() {
-            unsafe { Some(CJsonObject::from_raw_parts(self)) }
-        } else {
-            None
-        }
+        self.is_object()
+            .then(|| unsafe { CJsonObject::from_raw_parts(self) })
     }
 
     /// Returns the underlying [`cjsonrs_sys::cJSON`] object as a mutable
     /// object, if possible.
     #[inline(always)]
     pub fn as_mut_object(&mut self) -> Option<CJsonObject<&mut Self>> {
-        if self.is_object() {
-            unsafe { Some(CJsonObject::from_raw_parts(self)) }
-        } else {
-            None
-        }
+        self.is_object()
+            .then(|| unsafe { CJsonObject::from_raw_parts(self) })
     }
 
     /// Serializes the underlying [`cjsonrs_sys::cJSON`] object into a JSON
     /// string.
     #[inline(always)]
     pub fn to_c_string(&self) -> Result<CJsonString, Error> {
-        let ptr = self.as_ptr();
-
-        let s = unsafe { cjsonrs_sys::cJSON_PrintUnformatted(ptr) };
-
-        if let Some(ptr) = NonNull::new(s) {
-            let s = unsafe { CStr::from_ptr(ptr.as_ptr()) };
-            let len = s.to_bytes_with_nul().len();
-            unsafe { Ok(CJsonString::from_raw_parts(ptr, len)) }
-        } else {
-            Err(Error::Allocation)
-        }
+        self.print(cjsonrs_sys::cJSON_PrintUnformatted)
     }
 
     /// Serializes the underlying [`cjsonrs_sys::cJSON`] object into a pretty
     /// JSON string.
     #[inline(always)]
     pub fn to_c_string_pretty(&self) -> Result<CJsonString, Error> {
-        let ptr = self.as_ptr();
+        self.print(cjsonrs_sys::cJSON_Print)
+    }
 
-        let s = unsafe { cjsonrs_sys::cJSON_Print(ptr) };
-
-        if let Some(ptr) = NonNull::new(s) {
-            let s = unsafe { CStr::from_ptr(ptr.as_ptr()) };
-            let len = s.to_bytes_with_nul().len();
-            unsafe { Ok(CJsonString::from_raw_parts(ptr, len)) }
-        } else {
-            Err(Error::Allocation)
-        }
+    /// Renders this value with one of cJSON's printers.
+    #[inline(always)]
+    fn print(
+        &self,
+        printer: unsafe extern "C" fn(*const cjsonrs_sys::cJSON) -> *mut core::ffi::c_char,
+    ) -> Result<CJsonString, Error> {
+        let ptr = NonNull::new(unsafe { printer(self.as_ptr()) }).ok_or(Error::Allocation)?;
+        let len = unsafe { CStr::from_ptr(ptr.as_ptr()) }
+            .to_bytes_with_nul()
+            .len();
+        Ok(unsafe { CJsonString::from_raw_parts(ptr, len) })
     }
 
     /// Returns either the number of key value pairs in the object or the number
@@ -286,26 +259,16 @@ impl<'json> CJsonRef<'json> {
     /// structure.
     #[inline(always)]
     pub(super) fn name(&self) -> Option<&CStr> {
-        let ptr = self.0.string;
-        if ptr.is_null() {
-            None
-        } else {
-            Some(unsafe { CStr::from_ptr(ptr) })
-        }
+        NonNull::new(self.0.string).map(|ptr| unsafe { CStr::from_ptr(ptr.as_ptr()) })
     }
 
     /// Duplicates the underlying [`cjsonrs_sys::cJSON`] object.
     #[inline(always)]
     pub fn duplicate(&self) -> Result<CJson<'json>, Error> {
-        let ptr = self.as_ptr();
-        unsafe {
-            let ptr = cjsonrs_sys::cJSON_Duplicate(ptr, 1);
-            if let Some(ptr) = NonNull::new(ptr) {
-                Ok(CJson::from_raw_parts(ptr, PhantomData::<&'json ()>))
-            } else {
-                Err(Error::Allocation)
-            }
-        }
+        let ptr = unsafe { cjsonrs_sys::cJSON_Duplicate(self.as_ptr(), 1) };
+        NonNull::new(ptr)
+            .map(|ptr| unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'json ()>) })
+            .ok_or(Error::Allocation)
     }
 }
 
@@ -347,16 +310,9 @@ impl Display for CJsonRef<'_> {
         } else {
             self.to_c_string()
         };
+        let s = s.map_err(|_| core::fmt::Error)?;
 
-        let Ok(s) = s else {
-            return Err(core::fmt::Error);
-        };
-
-        let Ok(s) = s.to_str() else {
-            return Err(core::fmt::Error);
-        };
-
-        f.write_str(s)
+        f.write_str(s.to_str().map_err(|_| core::fmt::Error)?)
     }
 }
 

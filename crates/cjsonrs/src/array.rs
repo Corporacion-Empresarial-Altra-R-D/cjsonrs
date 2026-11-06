@@ -47,16 +47,9 @@ where
     /// Returns a reference to the value at the given index, if any.
     #[inline(always)]
     pub fn get(&self, index: impl Into<u32>) -> Option<&CJsonRef<'json>> {
-        let cjsonref = self.inner.as_ref();
-        let ptr = cjsonref.as_ptr();
+        let ptr = self.inner.as_ref().as_ptr();
         let cjson = unsafe { cjsonrs_sys::cJSON_GetArrayItem(ptr, index.into() as _) };
-
-        let result = if cjson.is_null() {
-            None
-        } else {
-            Some(unsafe { CJsonRef::from_ptr(cjson) })
-        };
-        result
+        (!cjson.is_null()).then(|| unsafe { CJsonRef::from_ptr(cjson) })
     }
 
     /// Returns a iterator over the arrays elements.
@@ -90,16 +83,9 @@ where
     /// Returns a mutable reference to the value at the given index, if any.
     #[inline(always)]
     pub fn get_mut(&mut self, index: impl Into<u32>) -> Option<&mut CJsonRef<'json>> {
-        let cjsonref = self.inner.as_mut();
-        let ptr = cjsonref.as_mut_ptr();
+        let ptr = self.inner.as_mut().as_mut_ptr();
         let cjson = unsafe { cjsonrs_sys::cJSON_GetArrayItem(ptr, index.into() as _) };
-
-        let result = if cjson.is_null() {
-            None
-        } else {
-            Some(unsafe { CJsonRef::from_mut_ptr(cjson) })
-        };
-        result
+        (!cjson.is_null()).then(|| unsafe { CJsonRef::from_mut_ptr(cjson) })
     }
 
     /// Removes the value at the given index.
@@ -177,11 +163,7 @@ impl<'json> TryFrom<CJson<'json>> for CJsonArray<CJson<'json>> {
     type Error = Error;
 
     fn try_from(value: CJson<'json>) -> Result<Self, Self::Error> {
-        if value.is_array() {
-            Ok(unsafe { CJsonArray::from_raw_parts(value) })
-        } else {
-            Err(Error::TypeError)
-        }
+        value.into_array().ok_or(Error::TypeError)
     }
 }
 

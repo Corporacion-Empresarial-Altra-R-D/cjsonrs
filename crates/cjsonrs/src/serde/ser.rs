@@ -1,6 +1,5 @@
 use alloc::borrow::ToOwned;
 use alloc::ffi::CString;
-use alloc::format;
 use alloc::string::ToString;
 
 use super::number::as_i64;
@@ -118,8 +117,7 @@ impl serde::Serializer for Serializer {
     type SerializeStructVariant = SerializeStructVariant;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
-        let cjson = CJson::bool(v)?;
-        Ok(cjson)
+        Ok(CJson::bool(v)?)
     }
 
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
@@ -167,18 +165,15 @@ impl serde::Serializer for Serializer {
     }
 
     fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
-        let cjson = CJson::number(v)?;
-        Ok(cjson)
+        Ok(CJson::number(v)?)
     }
 
     fn serialize_char(self, v: char) -> Result<Self::Ok, Self::Error> {
-        self.serialize_str(v.to_string().as_str())
+        self.serialize_str(v.encode_utf8(&mut [0; 4]))
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        let v = CString::new(v)?;
-        let cjson = CJson::string(v)?;
-        Ok(cjson)
+        Ok(CJson::string(CString::new(v)?)?)
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
@@ -190,8 +185,7 @@ impl serde::Serializer for Serializer {
     }
 
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
-        let cjson = CJson::null()?;
-        Ok(cjson)
+        Ok(CJson::null()?)
     }
 
     fn serialize_some<T>(self, value: &T) -> Result<Self::Ok, Self::Error>
@@ -241,8 +235,7 @@ impl serde::Serializer for Serializer {
     {
         let variant = CString::new(variant)?;
         let value = value.serialize(self)?;
-        let cjson = cjson!({variant => value})?.into();
-        Ok(cjson)
+        Ok(cjson!({variant => value})?.into())
     }
 
     fn serialize_seq(self, _: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
@@ -306,10 +299,7 @@ impl serde::Serializer for Serializer {
     where
         T: ?Sized + Display,
     {
-        let value = value.to_string();
-        let cstring = CString::new(value)?;
-        let cjson = CJson::string(cstring)?;
-        Ok(cjson)
+        Ok(CJson::string(display_key(value)?)?)
     }
 }
 
@@ -505,76 +495,62 @@ impl serde::Serializer for MapKeySerializer {
     }
 
     fn serialize_i8(self, value: i8) -> Result<Self::Ok, Self::Error> {
-        let value = format!("{value}");
-        Ok(CString::new(value)?)
+        display_key(value)
     }
 
     fn serialize_i16(self, value: i16) -> Result<Self::Ok, Self::Error> {
-        let value = format!("{value}");
-        Ok(CString::new(value)?)
+        display_key(value)
     }
 
     fn serialize_i32(self, value: i32) -> Result<Self::Ok, Self::Error> {
-        let value = format!("{value}");
-        Ok(CString::new(value)?)
+        display_key(value)
     }
 
     fn serialize_i64(self, value: i64) -> Result<Self::Ok, Self::Error> {
-        let value = format!("{value}");
-        Ok(CString::new(value)?)
+        display_key(value)
     }
 
     fn serialize_i128(self, value: i128) -> Result<Self::Ok, Self::Error> {
-        let value = format!("{value}");
-        Ok(CString::new(value)?)
+        display_key(value)
     }
 
     fn serialize_u8(self, value: u8) -> Result<Self::Ok, Self::Error> {
-        let value = format!("{value}");
-        Ok(CString::new(value)?)
+        display_key(value)
     }
 
     fn serialize_u16(self, value: u16) -> Result<Self::Ok, Self::Error> {
-        let value = format!("{value}");
-        Ok(CString::new(value)?)
+        display_key(value)
     }
 
     fn serialize_u32(self, value: u32) -> Result<Self::Ok, Self::Error> {
-        let value = format!("{value}");
-        Ok(CString::new(value)?)
+        display_key(value)
     }
 
     fn serialize_u64(self, value: u64) -> Result<Self::Ok, Self::Error> {
-        let value = format!("{value}");
-        Ok(CString::new(value)?)
+        display_key(value)
     }
 
     fn serialize_u128(self, value: u128) -> Result<Self::Ok, Self::Error> {
-        let value = format!("{value}");
-        Ok(CString::new(value)?)
+        display_key(value)
     }
 
     fn serialize_f32(self, value: f32) -> Result<Self::Ok, Self::Error> {
-        if value.is_finite() {
-            let value = format!("{value}");
-            Ok(CString::new(value)?)
-        } else {
-            Err(Error::FloatNotFinite)
+        if !value.is_finite() {
+            return Err(Error::FloatNotFinite);
         }
+        display_key(value)
     }
 
     fn serialize_f64(self, value: f64) -> Result<Self::Ok, Self::Error> {
-        if value.is_finite() {
-            let value = format!("{value}");
-            Ok(CString::new(value)?)
-        } else {
-            Err(Error::FloatNotFinite)
+        if !value.is_finite() {
+            return Err(Error::FloatNotFinite);
         }
+        display_key(value)
     }
 
     #[inline]
     fn serialize_char(self, value: char) -> Result<Self::Ok, Self::Error> {
-        Ok(CString::new(value.to_string())?)
+        display_key(value)
     }
 
     #[inline]
@@ -670,6 +646,11 @@ impl serde::Serializer for MapKeySerializer {
     where
         T: ?Sized + Display,
     {
-        Ok(CString::new(value.to_string())?)
+        display_key(value)
     }
+}
+
+/// Spells a map key the way it formats, as JSON keys must be strings.
+fn display_key(value: impl Display) -> Result<CString, Error> {
+    Ok(CString::new(value.to_string())?)
 }
