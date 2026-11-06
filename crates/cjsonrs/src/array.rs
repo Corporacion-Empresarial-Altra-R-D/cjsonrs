@@ -47,8 +47,8 @@ where
 
     /// Returns a reference to the value at the given index, if any.
     #[inline(always)]
-    pub fn get(&self, index: impl Into<u32>) -> Option<&CJsonRef<'json>> {
-        let index = c_int::try_from(index.into()).ok()?;
+    pub fn get(&self, index: impl TryInto<c_int>) -> Option<&CJsonRef<'json>> {
+        let index = index.try_into().ok()?;
         let ptr = self.inner.as_ref().as_ptr();
         let cjson = unsafe { cjsonrs_sys::cJSON_GetArrayItem(ptr, index) };
         (!cjson.is_null()).then(|| unsafe { CJsonRef::from_ptr(cjson) })
@@ -84,8 +84,8 @@ where
 {
     /// Returns a mutable reference to the value at the given index, if any.
     #[inline(always)]
-    pub fn get_mut(&mut self, index: impl Into<u32>) -> Option<&mut CJsonRef<'json>> {
-        let index = c_int::try_from(index.into()).ok()?;
+    pub fn get_mut(&mut self, index: impl TryInto<c_int>) -> Option<&mut CJsonRef<'json>> {
+        let index = index.try_into().ok()?;
         let ptr = self.inner.as_mut().as_mut_ptr();
         let cjson = unsafe { cjsonrs_sys::cJSON_GetArrayItem(ptr, index) };
         (!cjson.is_null()).then(|| unsafe { CJsonRef::from_mut_ptr(cjson) })
@@ -97,8 +97,8 @@ where
     ///
     /// If the index is not present, this function returns `None`.
     #[inline(always)]
-    pub fn remove(&mut self, index: impl Into<u32>) -> Option<CJson<'json>> {
-        let index = c_int::try_from(index.into()).ok()?;
+    pub fn remove(&mut self, index: impl TryInto<c_int>) -> Option<CJson<'json>> {
+        let index = index.try_into().ok()?;
         let ptr = self.inner.as_mut().as_mut_ptr();
         let cjson = unsafe { cjsonrs_sys::cJSON_DetachItemFromArray(ptr, index) };
 
@@ -123,22 +123,33 @@ where
     }
 
     /// Inserts a new value at the given index, shifting all other values to the
-    /// right.
+    /// right. An index past the end appends the value.
+    ///
+    /// # Errors
+    ///
+    /// Returns the value back if the index is negative or does not fit in a
+    /// [`c_int`].
     #[inline(always)]
-    pub fn insert<'a>(&mut self, index: impl Into<u32>, value: impl Into<CJson<'a>>)
+    pub fn insert<'a>(
+        &mut self,
+        index: impl TryInto<c_int>,
+        value: impl Into<CJson<'a>>,
+    ) -> Result<(), CJson<'a>>
     where
         'a: 'json,
     {
-        let index = c_int::try_from(index.into()).unwrap_or(c_int::MAX);
         let value = value.into();
-        let cjsonref = self.inner.as_mut();
-        let ptr = cjsonref.as_mut_ptr();
+        let Some(index) = index.try_into().ok().filter(|index| *index >= 0) else {
+            return Err(value);
+        };
+        let ptr = self.inner.as_mut().as_mut_ptr();
         let return_code = unsafe {
             cjsonrs_sys::cJSON_InsertItemInArray(ptr, index, value.into_raw_parts().as_ptr())
         };
 
         // We met all preconditions, so this should never fail.
         assert_ne!(return_code, 0, "cJSON_InsertItemInArray failed");
+        Ok(())
     }
 }
 

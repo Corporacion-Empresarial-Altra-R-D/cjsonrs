@@ -54,33 +54,69 @@ fn array_reads_report_length_and_missing_indices() -> TestResult {
 fn array_writes_insert_and_remove_items() -> TestResult {
     let mut array = cjson!([1, 3])?;
 
-    array.insert(1u32, CJson::number(2)?);
+    assert_eq!(array.insert(1, CJson::number(2)?), Ok(()));
     assert_eq!(array, cjson!([1, 2, 3])?);
 
-    let removed = array.remove(0u32).ok_or("index 0 exists")?;
+    let removed = array.remove(0).ok_or("index 0 exists")?;
     assert_eq!(removed.as_number(), Some(1.0));
-    assert_eq!(array.remove(5u32), None);
+    assert_eq!(array.remove(5), None);
     assert_eq!(array, cjson!([2, 3])?);
     Ok(())
 }
 
 #[test]
-fn inserting_past_the_c_int_range_appends_instead_of_panicking() -> TestResult {
+fn inserting_past_the_end_appends() -> TestResult {
     let mut array = cjson!([1])?;
 
-    array.insert(u32::MAX, CJson::number(2)?);
+    assert_eq!(array.insert(9, CJson::number(2)?), Ok(()));
     assert_eq!(array, cjson!([1, 2])?);
     Ok(())
 }
 
 #[test]
-fn indices_past_the_c_int_range_are_missing() -> TestResult {
+fn inserting_at_an_unusable_index_hands_the_value_back() -> TestResult {
     let mut array = cjson!([1])?;
 
-    assert_eq!(array.get(u32::MAX), None);
-    assert!(array.get_mut(u32::MAX).is_none());
-    assert_eq!(array.remove(u32::MAX), None);
+    let rejected = array
+        .insert(-1, CJson::number(2)?)
+        .err()
+        .ok_or("rejected")?;
+    assert_eq!(rejected.as_number(), Some(2.0));
+    let rejected = array
+        .insert(u32::MAX, CJson::number(3)?)
+        .err()
+        .ok_or("rejected")?;
+    assert_eq!(rejected.as_number(), Some(3.0));
+    let rejected = array
+        .insert(i64::MIN, CJson::number(4)?)
+        .err()
+        .ok_or("rejected")?;
+    assert_eq!(rejected.as_number(), Some(4.0));
     assert_eq!(array, cjson!([1])?);
+    Ok(())
+}
+
+#[test]
+fn unusable_indices_are_missing() -> TestResult {
+    let mut array = cjson!([1])?;
+
+    for index in [-1, i64::MIN, i64::from(u32::MAX)] {
+        assert_eq!(array.get(index), None);
+        assert!(array.get_mut(index).is_none());
+        assert_eq!(array.remove(index), None);
+    }
+    assert_eq!(array, cjson!([1])?);
+    Ok(())
+}
+
+#[test]
+fn indices_accept_any_integer_type() -> TestResult {
+    let array = cjson!([1, 2])?;
+
+    assert_eq!(array.get(1u8).and_then(CJsonRef::as_number), Some(2.0));
+    assert_eq!(array.get(1usize).and_then(CJsonRef::as_number), Some(2.0));
+    assert_eq!(array.get(1i64).and_then(CJsonRef::as_number), Some(2.0));
+    assert_eq!(array.get(1).and_then(CJsonRef::as_number), Some(2.0));
     Ok(())
 }
 
