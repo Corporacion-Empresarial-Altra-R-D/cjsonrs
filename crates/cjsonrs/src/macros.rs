@@ -23,7 +23,8 @@ macro_rules! _cjson_internal {
         let mut obj = $crate::_cjson_internal!({});
 
         $(
-            obj.insert_key_reference($key, $crate::_cjson_internal!($value));
+            obj.insert_key_reference($key, $crate::_cjson_internal!($value))
+                .map_err(|_| $crate::Error::Allocation)?;
         )*
         obj
     }};
@@ -32,7 +33,8 @@ macro_rules! _cjson_internal {
         let mut obj = $crate::_cjson_internal!({});
 
         $(
-            obj.insert($key, $crate::_cjson_internal!($value));
+            obj.insert($key, $crate::_cjson_internal!($value))
+                .map_err(|_| $crate::Error::Allocation)?;
         )*
         obj
     }};

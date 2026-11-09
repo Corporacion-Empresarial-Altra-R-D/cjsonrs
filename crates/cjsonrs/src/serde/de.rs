@@ -894,7 +894,9 @@ impl<'de> Deserialize<'de> for CJson<'static> {
                     let key = CString::new(key).map_err(de::Error::custom)?;
                     let value = visitor.next_value::<CJson<'static>>()?;
 
-                    object.insert(key, value);
+                    object
+                        .insert(key, value)
+                        .map_err(|_| de::Error::custom(crate::Error::Allocation))?;
                 }
 
                 Ok(object.into())

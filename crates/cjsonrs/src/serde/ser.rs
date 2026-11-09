@@ -383,7 +383,9 @@ impl SerializeMap for SerializeCJsonObject {
             .take()
             .expect("serialize_value called before serialize_key");
         let value = to_cjson(value)?;
-        self.object.insert(key, value);
+        self.object
+            .insert(key, value)
+            .map_err(|_| crate::Error::Allocation)?;
         Ok(())
     }
 
@@ -444,7 +446,9 @@ impl serde::ser::SerializeStructVariant for SerializeStructVariant {
     where
         T: ?Sized + Serialize,
     {
-        self.object.insert(CString::new(key)?, to_cjson(value)?);
+        self.object
+            .insert(CString::new(key)?, to_cjson(value)?)
+            .map_err(|_| crate::Error::Allocation)?;
         Ok(())
     }
 

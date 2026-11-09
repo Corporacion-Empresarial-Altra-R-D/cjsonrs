@@ -213,7 +213,7 @@ fn values_that_are_not_json_fail_to_serialize() -> TestResult {
     assert!(serde_json::to_value(CJson::string(c"\xff")?).is_err());
 
     let mut object = cjsonrs::CJsonObject::new()?;
-    object.insert(c"\xff", CJson::null()?);
+    object.insert(c"\xff", CJson::null()?).unwrap();
     assert!(serde_json::to_value(&object).is_err());
     Ok(())
 }
@@ -329,7 +329,7 @@ fn enum_payloads_must_match_the_variant_shape() -> TestResult {
     assert!(from_cjson::<Shapes>(cjson!({})?).is_err());
 
     let mut non_utf8 = cjsonrs::CJsonObject::new()?;
-    non_utf8.insert(c"\xff", CJson::null()?);
+    non_utf8.insert(c"\xff", CJson::null()?).unwrap();
     assert!(from_cjson::<Shapes>(&non_utf8).is_err());
     assert!(from_cjson::<BTreeMap<String, ()>>(&non_utf8).is_err());
     Ok(())
