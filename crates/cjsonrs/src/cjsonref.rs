@@ -5,6 +5,7 @@ use core::fmt::Debug;
 use core::fmt::Display;
 use core::fmt::Write as _;
 use core::marker::PhantomData;
+use core::marker::PhantomPinned;
 use core::ptr::NonNull;
 
 use super::CJson;
@@ -17,8 +18,7 @@ use super::Error;
 ///
 /// This type represents a reference to a valid CJson value. For more
 /// information, refer to the [module-level documentation](super).
-#[repr(transparent)]
-pub struct CJsonRef<'json>(cjsonrs_sys::cJSON, PhantomData<&'json ()>);
+pub struct CJsonRef<'json>(PhantomData<(*mut cjsonrs_sys::cJSON, PhantomPinned, &'json ())>);
 
 impl<'json> CJsonRef<'json> {
     /// Returns a pointer to the underlying [`cjsonrs_sys::cJSON`] object.
@@ -68,9 +68,7 @@ impl<'json> CJsonRef<'json> {
     /// contains information about the type of the object, whether it is a
     /// reference, and other metadata.
     pub fn flags(&self) -> i32 {
-        // SAFETY: Self is repr(transparent) over cjsonrs_sys::cJSON, so we can safely
-        // transmute a reference to Self to a reference to cjsonrs_sys::cJSON.
-        unsafe { core::mem::transmute::<&Self, &cjsonrs_sys::cJSON>(self) }.type_
+        unsafe { (*self.as_ptr()).type_ }
     }
 
     /// Returns `true` if the underlying [`cjsonrs_sys::cJSON`] object is a
@@ -240,7 +238,7 @@ impl<'json> CJsonRef<'json> {
     /// of the array.
     #[inline(always)]
     pub(super) fn iter(&self) -> CJsonIter<'_, 'json> {
-        let cjson = self.0.child;
+        let cjson = unsafe { (*self.as_ptr()).child };
 
         CJsonIter {
             cjson,
@@ -260,7 +258,8 @@ impl<'json> CJsonRef<'json> {
     /// structure.
     #[inline(always)]
     pub(super) fn name(&self) -> Option<&CStr> {
-        NonNull::new(self.0.string).map(|ptr| unsafe { CStr::from_ptr(ptr.as_ptr()) })
+        NonNull::new(unsafe { (*self.as_ptr()).string })
+            .map(|ptr| unsafe { CStr::from_ptr(ptr.as_ptr()) })
     }
 
     /// Duplicates the underlying [`cjsonrs_sys::cJSON`] object.
@@ -299,7 +298,7 @@ impl Debug for CJsonRef<'_> {
         } else if let Some(o) = self.as_object() {
             write!(f, "{o:?}")
         } else {
-            write!(f, "Unknown({:x})", self.0.type_)
+            write!(f, "Unknown({:x})", self.flags())
         }
     }
 }
