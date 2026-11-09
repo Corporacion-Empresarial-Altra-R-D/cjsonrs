@@ -95,26 +95,49 @@ impl CJson<'_> {
 
     /// Parses a C string into a [`CJson`] value.
     ///
+    /// The whole string must be a single JSON value, optionally surrounded by
+    /// whitespace. See [`CJson::from_slice`].
+    ///
     /// # Errors
     ///
-    /// This function returns an error if the input is not valid JSON or if
-    /// allocation fails.
+    /// This function returns an error if the input is not valid JSON, if it
+    /// has anything other than whitespace after the value, or if allocation
+    /// fails.
     #[inline(always)]
     pub fn from_c_str(s: impl AsRef<CStr>) -> Result<Self, Error> {
-        let s = s.as_ref().as_ptr();
-        unsafe { Self::from_owned_ptr(cjsonrs_sys::cJSON_Parse(s)) }
+        Self::from_slice(s.as_ref().to_bytes())
     }
 
     /// Parses a byte slice into a [`CJson`] value.
     ///
+    /// The whole slice must be a single JSON value, optionally surrounded by
+    /// whitespace: `{} trailing` and `[1]\0[2]` are both rejected.
+    ///
     /// # Errors
     ///
-    /// This function returns an error if the input is not valid JSON or if
-    /// allocation fails.
+    /// This function returns an error if the input is not valid JSON, if it
+    /// has anything other than whitespace after the value, or if allocation
+    /// fails.
     #[inline(always)]
     pub fn from_slice(s: &[u8]) -> Result<Self, Error> {
-        let cjson = unsafe { cjsonrs_sys::cJSON_ParseWithLength(s.as_ptr() as _, s.len()) };
-        unsafe { Self::from_owned_ptr(cjson) }
+        let mut end = core::ptr::null();
+        let cjson = unsafe {
+            Self::from_owned_ptr(cjsonrs_sys::cJSON_ParseWithLengthOpts(
+                s.as_ptr().cast(),
+                s.len(),
+                &mut end,
+                0,
+            ))?
+        };
+        let parsed = unsafe { end.cast::<u8>().offset_from(s.as_ptr()) } as usize;
+
+        s.get(parsed..)
+            .is_some_and(|rest| {
+                rest.iter()
+                    .all(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r'))
+            })
+            .then_some(cjson)
+            .ok_or(Error)
     }
 }
 

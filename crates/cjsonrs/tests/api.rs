@@ -301,6 +301,18 @@ fn values_can_be_parsed_from_c_strings() -> TestResult {
 }
 
 #[test]
+fn parsing_rejects_anything_after_the_value_but_whitespace() -> TestResult {
+    assert_eq!(CJson::from_slice(b" [1] \t\r\n")?.to_string(), "[1]");
+    assert_eq!(CJson::from_c_str(c"{} ")?.to_string(), "{}");
+    assert_eq!("{} trailing garbage".parse::<CJson>().err(), Some(Error));
+    assert_eq!(CJson::from_slice(b"[1]\0[2]").err(), Some(Error));
+    assert_eq!(CJson::from_slice(b"[1]\0").err(), Some(Error));
+    assert_eq!(CJson::from_c_str(c"1 2").err(), Some(Error));
+    assert_eq!(CJson::from_slice(b"").err(), Some(Error));
+    Ok(())
+}
+
+#[test]
 fn values_convert_into_arrays_and_objects_only_when_they_match() -> TestResult {
     assert!(CJson::null()?.into_array().is_none());
     assert!(CJson::null()?.into_object().is_none());
