@@ -315,6 +315,12 @@ impl Debug for CJsonRef<'_> {
     }
 }
 
+/// Prints the value as JSON with cJSON's printer: compact by default, indented
+/// with the alternate flag (`{:#}`).
+///
+/// Formatting fails with [`core::fmt::Error`] when cJSON cannot render the
+/// value, for example when an allocation fails. In that case `to_string()`
+/// panics; use [`CJsonRef::to_c_string`] to handle the failure instead. Bytes that are not valid UTF-8 are printed as U+FFFD.
 impl Display for CJsonRef<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let s = if f.alternate() {

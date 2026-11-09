@@ -451,6 +451,20 @@ fn equality_compares_object_keys_case_sensitively() -> TestResult {
 }
 
 #[test]
+fn duplicate_keys_are_kept_and_only_the_first_is_used() -> TestResult {
+    let mut cjson: CJson = r#"{"a":1,"a":2}"#.parse()?;
+    let mut object = cjson.as_mut_object().ok_or("object")?;
+
+    assert_eq!(object.get(c"a").and_then(CJsonRef::as_number), Some(1.0));
+    let previous = object.insert(c"a", CJson::number(3)?).unwrap();
+    assert_eq!(previous.and_then(|value| value.as_number()), Some(1.0));
+    assert_eq!(object.get(c"a").and_then(CJsonRef::as_number), Some(2.0));
+    assert_eq!(object.keys().count(), 2);
+    assert_eq!(cjson.to_string(), r#"{"a":2,"a":3}"#);
+    Ok(())
+}
+
+#[test]
 fn errors_carry_no_details() {
     assert_eq!(Error.to_string(), "cJSON operation failed");
 }
