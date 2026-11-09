@@ -107,6 +107,9 @@ where
     }
 
     /// Appends a new value to the array.
+    ///
+    /// cJSON limits how deeply some operations can nest; see
+    /// [nesting limits](crate#nesting-limits).
     #[inline(always)]
     pub fn push<'a>(&mut self, value: impl Into<CJson<'a>>)
     where
@@ -124,6 +127,9 @@ where
 
     /// Inserts a new value at the given index, shifting all other values to the
     /// right. An index past the end appends the value.
+    ///
+    /// cJSON limits how deeply some operations can nest; see
+    /// [nesting limits](crate#nesting-limits).
     ///
     /// # Errors
     ///

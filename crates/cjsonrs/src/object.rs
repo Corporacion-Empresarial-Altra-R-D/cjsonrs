@@ -14,6 +14,16 @@ use super::CJsonRef;
 use super::Error;
 
 /// A guard that wraps a CJson-like value for object operations.
+///
+/// # Duplicate keys
+///
+/// cJSON keeps every entry it parses, so an object read from
+/// `{"a":1,"a":2}` holds the key `a` twice. Keys are compared
+/// case-sensitively, and [`get`](Self::get), [`get_mut`](Self::get_mut),
+/// [`remove`](Self::remove), [`insert`](Self::insert) and
+/// [`insert_key_reference`](Self::insert_key_reference) only ever act on the
+/// first entry with a given key. Later duplicates are kept as they are, and
+/// iteration yields all of them.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct CJsonObject<R> {
@@ -49,6 +59,9 @@ where
     }
 
     /// Returns a reference to the value associated with the given key, if any.
+    ///
+    /// With [duplicate keys](CJsonObject#duplicate-keys), this is the first
+    /// entry with that key.
     #[inline(always)]
     pub fn get(&self, key: impl AsRef<CStr>) -> Option<&CJsonRef<'json>> {
         let ptr = self.inner.as_ref().as_ptr();
@@ -128,6 +141,9 @@ where
 {
     /// Returns a mutable reference to the value associated with the given key,
     /// if any.
+    ///
+    /// With [duplicate keys](CJsonObject#duplicate-keys), this is the first
+    /// entry with that key.
     #[inline(always)]
     pub fn get_mut(&mut self, key: impl AsRef<CStr>) -> Option<&mut CJsonRef<'json>> {
         let ptr = self.inner.as_mut().as_mut_ptr();
@@ -140,7 +156,9 @@ where
     ///
     /// If the key is present, the associated value is removed and returned.
     ///
-    /// If the key is not present, this function returns `None`.
+    /// If the key is not present, this function returns `None`. With
+    /// [duplicate keys](CJsonObject#duplicate-keys), only the first entry is
+    /// removed.
     #[inline(always)]
     pub fn remove(&mut self, key: impl AsRef<CStr>) -> Option<CJson<'json>> {
         let cjsonref = self.inner.as_mut();
@@ -157,6 +175,12 @@ where
     ///
     /// If the key is already present, the associated value is replaced and
     /// returned as `Ok(Some(previous))`. Otherwise, `Ok(None)` is returned.
+    /// The new entry is added at the end of the object. With
+    /// [duplicate keys](CJsonObject#duplicate-keys), only the first entry is
+    /// replaced.
+    ///
+    /// cJSON limits how deeply some operations can nest; see
+    /// [nesting limits](crate#nesting-limits).
     ///
     /// # Errors
     ///
@@ -185,6 +209,9 @@ where
     ///
     /// If the key is already present, the associated value is replaced and
     /// returned as `Ok(Some(previous))`. Otherwise, `Ok(None)` is returned.
+    /// The new entry is added at the end of the object. With
+    /// [duplicate keys](CJsonObject#duplicate-keys), only the first entry is
+    /// replaced.
     ///
     /// # Errors
     ///

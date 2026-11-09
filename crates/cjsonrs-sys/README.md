@@ -37,3 +37,7 @@ Set the following environment variables to customize how the library is built:
   building from source)
 - `CJSON_SRC_PATH` - path to cJSON source files (if unset it defaults to
   vendored sources)
+
+Without the `vendored` feature and without `CJSON_LIB_PATH`, this crate does
+not link cJSON at all. The final binary must then get the cJSON symbols from
+somewhere else, for example from cJSON sources compiled into a C dependency.

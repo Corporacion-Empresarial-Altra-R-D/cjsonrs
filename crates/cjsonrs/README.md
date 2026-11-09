@@ -64,6 +64,21 @@ Set the following features to enable the corresponding functionality:
 - `serde` - Implements serialize and deserialize traits for all CJson types. It
   also enables the `serde` module. See the serde example for more information.
 
+## Nesting limits
+
+Building a tree with `push` and `insert` has no depth limit, but cJSON itself
+does:
+
+- Parsing rejects input nested more than 1000 levels deep
+  (`CJSON_NESTING_LIMIT`). A deeper tree can still be printed, but its output
+  cannot be parsed back.
+- `duplicate` fails beyond 10000 levels (`CJSON_CIRCULAR_LIMIT`), so `Clone`
+  and `ToOwned` panic on such a tree.
+- Dropping, printing and comparing recurse in C without any limit, so a very
+  deep tree can overflow the stack and abort the process.
+
+Keep trees within 1000 levels if they need to round trip through text.
+
 ## FAQs
 
 ### Difference with [`cjson-rs`](https://github.com/nemuelw/cjson-rs)?
