@@ -68,7 +68,7 @@ fn assert_that_tuple_structs_can_be_serialized_into_cjson() -> Result<(), Box<dy
 #[test]
 fn assert_that_struct_variant_can_be_serialized_into_cjson() -> Result<(), Box<dyn Error>> {
     let expected = cjson!({
-        c"variant" => {
+        c"Variant" => {
             c"hello" => c"world",
             c"answer" => 42,
         },

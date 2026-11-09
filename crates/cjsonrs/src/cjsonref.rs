@@ -272,12 +272,22 @@ impl<'json> CJsonRef<'json> {
     }
 }
 
+/// Compares two values with `cJSON_Compare`.
+///
+/// Object keys are compared case-sensitively, and objects with the same
+/// entries in a different order are equal.
+///
+/// Numbers are equal when they differ by at most [`f64::EPSILON`] times the
+/// larger magnitude. This makes `==` approximate and not transitive: `1.0`
+/// equals `1.0 + EPSILON`, which equals `1.0 + 2.0 * EPSILON`, but `1.0` does
+/// not equal `1.0 + 2.0 * EPSILON`. A `NaN` number is not equal to any other
+/// value, including another `NaN`.
 impl PartialEq for CJsonRef<'_> {
     fn eq(&self, other: &Self) -> bool {
         let ptr1 = self.as_ptr();
         let ptr2 = other.as_ptr();
 
-        let b = unsafe { cjsonrs_sys::cJSON_Compare(ptr1, ptr2, 0) };
+        let b = unsafe { cjsonrs_sys::cJSON_Compare(ptr1, ptr2, 1) };
         b != 0
     }
 }
