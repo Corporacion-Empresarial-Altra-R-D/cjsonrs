@@ -440,6 +440,17 @@ fn printed_strings_compare_hash_and_format_as_c_strings() -> TestResult {
 }
 
 #[test]
+fn equality_compares_object_keys_case_sensitively() -> TestResult {
+    let lower: CJson = r#"{"a":1,"b":2}"#.parse()?;
+    let upper: CJson = r#"{"A":1,"b":2}"#.parse()?;
+    let reordered: CJson = r#"{"b":2,"a":1}"#.parse()?;
+
+    assert_ne!(lower, upper);
+    assert_eq!(lower, reordered);
+    Ok(())
+}
+
+#[test]
 fn errors_carry_no_details() {
     assert_eq!(Error.to_string(), "cJSON operation failed");
 }
