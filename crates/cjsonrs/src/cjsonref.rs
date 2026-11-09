@@ -239,12 +239,14 @@ impl<'json> CJsonRef<'json> {
     #[inline(always)]
     pub(super) fn iter(&self) -> CJsonIter<'_, 'json> {
         let cjson = unsafe { (*self.as_ptr()).child };
+        let remaining = core::iter::successors(NonNull::new(cjson), |item| {
+            NonNull::new(unsafe { item.as_ref() }.next)
+        })
+        .count();
 
         CJsonIter {
             cjson,
-            // Counted here, on the parent, because the cursor below walks the
-            // sibling chain and can no longer ask for the total.
-            remaining: self.len().max(0) as usize,
+            remaining,
             _phantom: PhantomData,
         }
     }
