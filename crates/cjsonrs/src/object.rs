@@ -261,7 +261,7 @@ impl<'json> TryFrom<CJson<'json>> for CJsonObject<CJson<'json>> {
     type Error = Error;
 
     fn try_from(value: CJson<'json>) -> Result<Self, Self::Error> {
-        value.into_object().ok_or(Error::TypeError)
+        value.into_object().ok_or(Error)
     }
 }
 

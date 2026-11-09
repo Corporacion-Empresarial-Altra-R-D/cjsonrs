@@ -896,7 +896,7 @@ impl<'de> Deserialize<'de> for CJson<'static> {
 
                     object
                         .insert(key, value)
-                        .map_err(|_| de::Error::custom(crate::Error::Allocation))?;
+                        .map_err(|_| de::Error::custom(crate::Error))?;
                 }
 
                 Ok(object.into())

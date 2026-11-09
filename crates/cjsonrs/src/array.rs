@@ -176,7 +176,7 @@ impl<'json> TryFrom<CJson<'json>> for CJsonArray<CJson<'json>> {
     type Error = Error;
 
     fn try_from(value: CJson<'json>) -> Result<Self, Self::Error> {
-        value.into_array().ok_or(Error::TypeError)
+        value.into_array().ok_or(Error)
     }
 }
 

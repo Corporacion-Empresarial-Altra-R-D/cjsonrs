@@ -44,5 +44,5 @@ fn constructors_report_allocation_failures_as_allocation_errors() {
     ];
     FAIL.store(false, Ordering::SeqCst);
 
-    assert_eq!(results, [Some(Error::Allocation); 7]);
+    assert_eq!(results, [Some(Error); 7]);
 }
