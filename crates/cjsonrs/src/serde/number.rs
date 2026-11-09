@@ -14,14 +14,20 @@
 /// - `MAX as f64` rounds *up* for these widths, because 2<sup>k</sup>-1 is not
 ///   representable, which makes it the exclusive upper bound.
 ///
-/// That second property only holds from 64 bits up; do not instantiate this
-/// for a narrower type, whose `MAX` would be exact and wrongly excluded.
+/// That second property only holds for types wider than the 53-bit `f64`
+/// mantissa. A narrower type, whose `MAX` would be exact and wrongly excluded,
+/// fails to compile.
 macro_rules! integral {
     ($(
         $(#[$meta:meta])*
         $name:ident -> $ty:ty;
     )*) => {
         $(
+            const _: () = assert!(
+                <$ty>::BITS > f64::MANTISSA_DIGITS,
+                concat!(stringify!($ty), " is too narrow for an exclusive MAX bound"),
+            );
+
             $(#[$meta])*
             ///
             /// Returns `None` unless `n` holds an exact integral value that
