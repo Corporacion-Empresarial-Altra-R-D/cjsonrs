@@ -210,7 +210,7 @@ impl<'json> CJsonRef<'json> {
         &self,
         printer: unsafe extern "C" fn(*const cjsonrs_sys::cJSON) -> *mut core::ffi::c_char,
     ) -> Result<CJsonString, Error> {
-        let ptr = NonNull::new(unsafe { printer(self.as_ptr()) }).ok_or(Error::Allocation)?;
+        let ptr = NonNull::new(unsafe { printer(self.as_ptr()) }).ok_or(Error)?;
         let len = unsafe { CStr::from_ptr(ptr.as_ptr()) }
             .to_bytes_with_nul()
             .len();
@@ -268,7 +268,7 @@ impl<'json> CJsonRef<'json> {
         let ptr = unsafe { cjsonrs_sys::cJSON_Duplicate(self.as_ptr(), 1) };
         NonNull::new(ptr)
             .map(|ptr| unsafe { CJson::from_raw_parts(ptr, PhantomData::<&'json ()>) })
-            .ok_or(Error::Allocation)
+            .ok_or(Error)
     }
 }
 

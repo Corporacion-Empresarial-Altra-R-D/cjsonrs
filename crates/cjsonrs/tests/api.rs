@@ -179,7 +179,7 @@ fn arrays_format_and_convert() -> TestResult {
 
     let value: CJson = array.into();
     assert!(CJsonArray::try_from(value).is_ok());
-    assert_eq!(CJsonArray::try_from(CJson::null()?), Err(Error::TypeError));
+    assert_eq!(CJsonArray::try_from(CJson::null()?), Err(Error));
     Ok(())
 }
 
@@ -288,7 +288,7 @@ fn objects_format_and_convert() -> TestResult {
 
     let value: CJson = object.into();
     assert!(CJsonObject::try_from(value).is_ok());
-    assert_eq!(CJsonObject::try_from(CJson::null()?), Err(Error::TypeError));
+    assert_eq!(CJsonObject::try_from(CJson::null()?), Err(Error));
     Ok(())
 }
 
@@ -296,7 +296,7 @@ fn objects_format_and_convert() -> TestResult {
 fn values_can_be_parsed_from_c_strings() -> TestResult {
     let value = CJson::from_c_str(c"[1]")?;
     assert!(value.is_array());
-    assert_eq!(CJson::from_c_str(c"[").err(), Some(Error::Parse));
+    assert_eq!(CJson::from_c_str(c"[").err(), Some(Error));
     Ok(())
 }
 
@@ -425,4 +425,9 @@ fn printed_strings_compare_hash_and_format_as_c_strings() -> TestResult {
     let as_ref: &CStr = one.as_ref();
     assert_eq!(as_ref, c"1");
     Ok(())
+}
+
+#[test]
+fn errors_carry_no_details() {
+    assert_eq!(Error.to_string(), "cJSON operation failed");
 }

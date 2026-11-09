@@ -24,7 +24,7 @@ macro_rules! _cjson_internal {
 
         $(
             obj.insert_key_reference($key, $crate::_cjson_internal!($value))
-                .map_err(|_| $crate::Error::Allocation)?;
+                .map_err(|_| $crate::Error)?;
         )*
         obj
     }};
@@ -34,7 +34,7 @@ macro_rules! _cjson_internal {
 
         $(
             obj.insert($key, $crate::_cjson_internal!($value))
-                .map_err(|_| $crate::Error::Allocation)?;
+                .map_err(|_| $crate::Error)?;
         )*
         obj
     }};
