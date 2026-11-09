@@ -44,7 +44,8 @@ fn a_tree_stays_usable_after_the_tree_it_was_swapped_with_is_dropped() {
     object
         .as_mut_object()
         .unwrap()
-        .insert(c"new", CJson::null().unwrap());
+        .insert(c"new", CJson::null().unwrap())
+        .unwrap();
 
     assert_eq!(object.to_string(), r#"{"k":"v","z":[4,5],"new":null}"#);
 }
