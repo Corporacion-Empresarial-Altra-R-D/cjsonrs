@@ -203,14 +203,20 @@ fn objects_replace_existing_keys_on_insert() -> TestResult {
     let mut object = CJsonObject::new()?;
     let key = CString::new("owned")?;
 
-    assert_eq!(object.insert(&key, CJson::number(1)?), None);
+    assert_eq!(object.insert(&key, CJson::number(1)?), Ok(None));
     let previous = object
         .insert(&key, CJson::number(2)?)
+        .unwrap()
         .ok_or("key existed")?;
     assert_eq!(previous.as_number(), Some(1.0));
 
-    assert_eq!(object.insert_key_reference(c"ref", CJson::null()?), None);
-    let previous = object.insert_key_reference(c"ref", CJson::bool(false)?);
+    assert_eq!(
+        object.insert_key_reference(c"ref", CJson::null()?),
+        Ok(None)
+    );
+    let previous = object
+        .insert_key_reference(c"ref", CJson::bool(false)?)
+        .unwrap();
     assert!(previous.ok_or("key existed")?.is_null());
 
     assert_eq!(object, cjson!({ c"owned" => 2, c"ref" => false })?);

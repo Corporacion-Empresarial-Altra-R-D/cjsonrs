@@ -173,7 +173,7 @@ fn assert_that_items_can_be_inserted_to_objects() -> Result<(), Box<dyn std::err
     let mut cjson = cjson!({})?;
     let previous = cjson.insert(c"hello", CJson::null()?);
 
-    assert_eq!(previous, None);
+    assert_eq!(previous, Ok(None));
     assert!(cjson[c"hello"].is_null());
     Ok(())
 }
@@ -184,7 +184,7 @@ fn assert_that_items_can_be_inserted_to_objects_and_the_previous_value_is_return
     let mut cjson = cjson!({c"hello"=>c"world"})?;
     let previous = cjson.insert(c"hello", CJson::null()?);
 
-    assert_eq!(previous, Some(CJson::string_reference(c"world")?));
+    assert_eq!(previous, Ok(Some(CJson::string_reference(c"world")?)));
     assert!(cjson[c"hello"].is_null());
     Ok(())
 }
@@ -198,7 +198,8 @@ fn assert_that_inner_items_can_be_mutated() -> Result<(), Box<dyn std::error::Er
     cjson[c"key"]
         .as_mut_object()
         .unwrap()
-        .insert(c"hello", cjson!(c"value")?);
+        .insert(c"hello", cjson!(c"value")?)
+        .unwrap();
 
     assert_eq!(
         cjson,

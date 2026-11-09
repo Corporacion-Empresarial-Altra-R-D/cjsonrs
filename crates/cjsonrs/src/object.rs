@@ -1,5 +1,6 @@
 #[cfg(any(feature = "std", feature = "alloc"))]
 use alloc::ffi::CString;
+use core::ffi::c_char;
 use core::ffi::CStr;
 use core::fmt::Debug;
 use core::fmt::Display;
@@ -155,63 +156,85 @@ where
     /// Inserts a new key-value pair into the object.
     ///
     /// If the key is already present, the associated value is replaced and
-    /// returned.
+    /// returned as `Ok(Some(previous))`. Otherwise, `Ok(None)` is returned.
     ///
-    /// If the key is not present, `None` is returned.
+    /// # Errors
+    ///
+    /// Returns the value back if the key cannot be copied because the
+    /// allocation fails. The object is left unchanged.
     #[inline(always)]
     pub fn insert<'a>(
         &mut self,
         key: impl AsRef<CStr>,
         value: impl Into<CJson<'a>>,
-    ) -> Option<CJson<'json>>
+    ) -> Result<Option<CJson<'json>>, CJson<'a>>
     where
         'a: 'json,
     {
-        let value = value.into();
-        let cjsonref = self.inner.as_mut();
-        let ptr = cjsonref.as_mut_ptr();
-        let key = key.as_ref();
-        let result = self.remove(key);
-
-        let return_code = unsafe {
-            cjsonrs_sys::cJSON_AddItemToObject(ptr, key.as_ptr(), value.into_raw_parts().as_ptr())
-        };
-
-        // We met all preconditions, so this should never fail.
-        assert_ne!(return_code, 0, "cJSON_AddItemToObject returned an error");
-
-        result
+        unsafe {
+            self.add_item(
+                key.as_ref(),
+                value.into(),
+                cjsonrs_sys::cJSON_AddItemToObject,
+            )
+        }
     }
 
     /// Inserts a new key-value pair into the object, but the key is stored as a
     /// reference.
     ///
     /// If the key is already present, the associated value is replaced and
-    /// returned.
+    /// returned as `Ok(Some(previous))`. Otherwise, `Ok(None)` is returned.
     ///
-    /// If the key is not present, `None` is returned.
+    /// # Errors
+    ///
+    /// Returns the value back if cJSON rejects the item. The object is left
+    /// unchanged.
     #[inline(always)]
     pub fn insert_key_reference<'a>(
         &mut self,
         key: &'a CStr,
         value: impl Into<CJson<'a>>,
-    ) -> Option<CJson<'json>>
+    ) -> Result<Option<CJson<'json>>, CJson<'a>>
     where
         'a: 'json,
     {
-        let value = value.into();
-        let cjsonref = self.inner.as_mut();
-        let ptr = cjsonref.as_mut_ptr();
-        let result = self.remove(key);
+        unsafe { self.add_item(key, value.into(), cjsonrs_sys::cJSON_AddItemToObjectCS) }
+    }
 
-        let return_code = unsafe {
-            cjsonrs_sys::cJSON_AddItemToObjectCS(ptr, key.as_ptr(), value.into_raw_parts().as_ptr())
-        };
+    /// Adds `value` under `key` with one of cJSON's object insertion
+    /// functions, then detaches the entry it replaces, if any.
+    ///
+    /// # Safety
+    ///
+    /// If `add` stores `key` without copying it, `key` must outlive `'json`.
+    #[inline(always)]
+    unsafe fn add_item<'a>(
+        &mut self,
+        key: &CStr,
+        mut value: CJson<'a>,
+        add: unsafe extern "C" fn(
+            *mut cjsonrs_sys::cJSON,
+            *const c_char,
+            *mut cjsonrs_sys::cJSON,
+        ) -> cjsonrs_sys::cJSON_bool,
+    ) -> Result<Option<CJson<'json>>, CJson<'a>> {
+        let object = self.inner.as_mut().as_mut_ptr();
+        let previous =
+            unsafe { cjsonrs_sys::cJSON_GetObjectItemCaseSensitive(object, key.as_ptr()) };
 
-        // We met all preconditions, so this should never fail.
-        assert_ne!(return_code, 0, "cJSON_AddItemToObjectCS returned an error");
+        if unsafe { add(object, key.as_ptr(), value.as_mut_ptr()) } == 0 {
+            return Err(value);
+        }
+        value.into_raw_parts();
 
-        result
+        Ok(NonNull::new(previous)
+            .and_then(|previous| {
+                NonNull::new(unsafe {
+                    cjsonrs_sys::cJSON_DetachItemViaPointer(object, previous.as_ptr())
+                })
+            })
+            .map(|detached| unsafe { CJson::from_raw_parts(detached, PhantomData::<&'json ()>) }))
     }
 }
 
